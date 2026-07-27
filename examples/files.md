@@ -1,3 +1,0 @@
-# File transfer examples
-
-> TBD.
