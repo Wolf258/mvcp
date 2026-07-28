@@ -2,17 +2,16 @@
 
 ## Connection-Level Version
 
-MVCP uses a connection-level version byte in the handshake:
+MVCP and VPP each use a connection-level version byte in their handshake:
 
 ```
-┌─────────────────┬─────────┐
-│ magic (4B)      │ version │
-│ 'M' 'V' 'C' 'P' │  0x01   │
-└─────────────────┴─────────┘
+MVCP handshake (5 bytes):   "MVCP" + 0x01
+VPP  handshake (4 bytes):   "VPP"  + 0x01
 ```
 
-The guest sends its protocol version immediately after accept. The host
-validates it and either proceeds or closes the connection.
+The guest sends the appropriate handshake immediately after accept,
+depending on which protocol the port expects. The host validates it
+and either proceeds or closes the connection.
 
 ## Version Negotiation
 
@@ -25,7 +24,9 @@ validates it and either proceeds or closes the connection.
 
 ## Compatibility Policy
 
-- **v1**: Initial wire format as specified in this document.
+- **v1**: Initial wire format as specified in this document. Unified
+  transport frame (4B length), MVCP inner header (6B), VPP inner header
+  (1B).
 - **v2+**: When the protocol evolves, the version byte in the handshake
   changes. All message types on that connection use the new version's
   wire format.
@@ -35,13 +36,15 @@ The following **will NOT** trigger a major version bump:
 - Adding new error codes
 - Adding new event types
 - Adding new flags (reserved bits → defined)
+- Adding new VPP message types
 
 The following **WILL** trigger a major version bump:
-- Changing the frame header layout
+- Changing the transport frame header layout
+- Changing MVCP or VPP inner header layout
 - Changing primitive encoding sizes
 - Changing `length` field semantics
 - Removing or renumbering existing message types
-- Changing port allocations
+- Changing port allocation conventions (breaking existing deployments)
 
 ## Backward Compatibility
 
@@ -59,10 +62,10 @@ feature.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| `0x01` | — | Initial wire format. Connection handshake (magic + version). Frame: length(type+flags+msg_id+payload). `IS_ERROR` flag removed. Heartbeat migrated to binary. |
+| `0x01` | — | Unified transport frame (4B). MVCP inner header (type+flags+msg_id). VPP companion protocol (type-only). Port-agnostic design. |
 
 ---
 
 See also:
-- [01-transport.md](01-transport.md) for the handshake wire format.
-- [02-wire-format.md](02-wire-format.md) for the frame layout.
+- [01-transport.md](01-transport.md) for the handshake wire format and transport frame.
+- [02-wire-format.md](02-wire-format.md) for the MVCP and VPP frame layouts.
