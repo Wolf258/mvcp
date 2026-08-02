@@ -38,6 +38,15 @@ const (
 	TypeEVENTMOUNT        uint8 = 0x82
 	TypeEVENTERROR        uint8 = 0x83
 	TypeEVENTLOG          uint8 = 0x84
+	// TypeEVENTINITFAILED is emitted by the guest once when
+	// /init.sh (or defaultInit) fails, panics, or exceeds the
+	// init timeout. It carries the same short machine-readable
+	// reason the heartbeat's ExtFailureReason TLV would carry
+	// (e.g. "init_timeout", "init_panic", "internal"). Late
+	// subscribers on the events port (9002) receive it instead
+	// of EVENT_READY so the host can surface the failure without
+	// waiting for a heartbeat-derived state transition.
+	TypeEVENTINITFAILED uint8 = 0x86
 
 	TypeSTARTED uint8 = 0xFA
 	TypeERROR   uint8 = 0xFE

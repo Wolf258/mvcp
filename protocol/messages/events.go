@@ -143,6 +143,45 @@ func (m *EventLog) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
+// EventInitFailed is the one-shot event the guest emits when
+// /init.sh (or defaultInit) fails, panics, or exceeds the
+// init timeout. It is the event-channel mirror of the heartbeat
+// ExtFailureReason TLV — same reason vocabulary, same wire
+// semantics — so a host watching only the events stream can
+// surface the failure without waiting for a heartbeat-driven
+// state transition. Sent at most once per VM lifetime; late
+// subscribers on port 9002 receive it instead of EVENT_READY.
+type EventInitFailed struct {
+	Version string
+	Reason  string
+}
+
+func (m *EventInitFailed) MarshalBinary() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := protocol.WriteString(&buf, m.Version); err != nil {
+		return nil, err
+	}
+	if err := protocol.WriteString(&buf, m.Reason); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (m *EventInitFailed) UnmarshalBinary(data []byte) error {
+	r := bytes.NewReader(data)
+	ver, err := protocol.ReadString(r)
+	if err != nil {
+		return fmt.Errorf("event_init_failed: read version: %w", err)
+	}
+	reason, err := protocol.ReadString(r)
+	if err != nil {
+		return fmt.Errorf("event_init_failed: read reason: %w", err)
+	}
+	m.Version = ver
+	m.Reason = reason
+	return nil
+}
+
 func init() {
 	protocol.RegisterMessage(protocol.TypeEVENTREADY, func(r io.Reader) (protocol.Message, error) {
 		ver, err := protocol.ReadString(r)
@@ -198,5 +237,16 @@ func init() {
 			return nil, fmt.Errorf("event_log: %w", err)
 		}
 		return &EventLog{Level: lvl, Message: msg, TsNs: ts}, nil
+	})
+	protocol.RegisterMessage(protocol.TypeEVENTINITFAILED, func(r io.Reader) (protocol.Message, error) {
+		ver, err := protocol.ReadString(r)
+		if err != nil {
+			return nil, fmt.Errorf("event_init_failed: read version: %w", err)
+		}
+		reason, err := protocol.ReadString(r)
+		if err != nil {
+			return nil, fmt.Errorf("event_init_failed: read reason: %w", err)
+		}
+		return &EventInitFailed{Version: ver, Reason: reason}, nil
 	})
 }

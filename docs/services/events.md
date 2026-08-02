@@ -16,7 +16,8 @@ the event to its handler.
 | `0x82` | `EVENT_MOUNT` | `WANT_ACK` | `string path`, `string fstype` |
 | `0x83` | `EVENT_ERROR` | `WANT_ACK` | `uint16 code`, `string message` |
 | `0x84` | `EVENT_LOG` | `WANT_ACK` | `uint8 level`, `string message`, `uint64 ts_ns` |
-| `0x85`–`0x8F` | *(reserved)* | — | — |
+| `0x86` | `EVENT_INIT_FAILED` | `WANT_ACK` | `string version`, `string reason` |
+| `0x85`, `0x87`–`0x8F` | *(reserved)* | — | — |
 
 ## Acknowledgment Flow
 
@@ -45,11 +46,46 @@ the event as undelivered and may retry or drop the event.
 
 ## EVENT_READY (`0x80`)
 
-Sent once when the guest finishes boot and all services are listening.
+Sent once when the guest finishes boot **and** the init
+sequence (`/init.sh` or `defaultInit`) returns successfully.
+A late subscriber that connects to port 9002 before init
+completes will block inside the events session until init
+resolves — either to `EVENT_READY` (success) or to
+`EVENT_INIT_FAILED` (failure/panic/timeout). The event is
+emitted at most once per VM lifetime.
 
 | Field | Encoding | Description |
 |-------|----------|-------------|
 | `version` | `string` | vhandler version string |
+
+### Consumer contract
+
+`EVENT_READY` is the canonical "init is complete" signal
+emitted by the guest. Hosts that initiate host→guest actions
+on vsock ports **not** explicitly designated as "always
+available" in the vhandler's channel gating matrix (see
+[`docs/agents/07-vhandler.md`](../../../docs/agents/07-vhandler.md#channel-gating-matrix))
+MUST wait for this event before sending their request. The
+vhandler applies the broadcast as a defense-in-depth gate only
+on the console port (9001) and on its own event emission; the
+host remains the authoritative enforcer for RPC (9000) and
+file transfer (9004).
+
+## EVENT_INIT_FAILED (`0x86`)
+
+Sent once when the guest's init sequence fails, panics, or
+exceeds the `initTimeout` budget. The `reason` string is the
+same machine-readable vocabulary the heartbeat's
+`ExtFailureReason` TLV uses (`init_timeout`, `init_panic`,
+`internal`, `mount_failed`, `exec_failed`) so a host can
+reuse its reason→error mapping for either channel. Emitted
+in place of `EVENT_READY`; the two are mutually exclusive
+within a single VM lifetime.
+
+| Field | Encoding | Description |
+|-------|----------|-------------|
+| `version` | `string` | vhandler version string |
+| `reason` | `string` | failure reason (see `messages.HeartbeatFailureReason`) |
 
 ## EVENT_FILE_RECEIVED (`0x81`)
 
@@ -94,3 +130,7 @@ Structured log event from inside the guest.
 
 See also:
 - [04-error-codes.md](../04-error-codes.md) for the error code registry used by `EVENT_ERROR`.
+- [Channel gating matrix](../../../docs/agents/07-vhandler.md#channel-gating-matrix)
+  in `docs/agents/07-vhandler.md` for which vsock ports are
+  gated by the init broadcast and which require consumer-side
+  enforcement.
