@@ -1,20 +1,47 @@
 # Events Service (Port 9002)
 
-> Message type range `0x80`–`0x8F`. One-way G→H.
+> Message type range `0x80`–`0x8F`. G→H with application-level ACK.
 
 Port 9002 carries asynchronous event notifications from guest to host.
-All events are one-way frames (`msg_id = 0`). No response is expected.
+Every event carries `WANT_ACK` (`0x04`) and a non-zero `msg_id`. The
+host MUST respond with an `MVCP_ACK` (type `0xFB`) after dispatching
+the event to its handler.
 
 ## Message Types
 
-| Type | Name | Payload |
-|------|------|---------|
-| `0x80` | `EVENT_READY` | `string version` |
-| `0x81` | `EVENT_FILE_RECEIVED` | `string path`, `bytes sha256`, `uint64 size` |
-| `0x82` | `EVENT_MOUNT` | `string path`, `string fstype` |
-| `0x83` | `EVENT_ERROR` | `uint16 code`, `string message` |
-| `0x84` | `EVENT_LOG` | `uint8 level`, `string message`, `uint64 ts_ns` |
-| `0x85`–`0x8F` | *(reserved)* | — |
+| Type | Name | Flags | Payload |
+|------|------|-------|---------|
+| `0x80` | `EVENT_READY` | `WANT_ACK` | `string version` |
+| `0x81` | `EVENT_FILE_RECEIVED` | `WANT_ACK` | `string path`, `uint64 size` |
+| `0x82` | `EVENT_MOUNT` | `WANT_ACK` | `string path`, `string fstype` |
+| `0x83` | `EVENT_ERROR` | `WANT_ACK` | `uint16 code`, `string message` |
+| `0x84` | `EVENT_LOG` | `WANT_ACK` | `uint8 level`, `string message`, `uint64 ts_ns` |
+| `0x85`–`0x8F` | *(reserved)* | — | — |
+
+## Acknowledgment Flow
+
+Every event is acknowledged by the host. The guest allocates a monotonic
+`msg_id` per connection and sets `WANT_ACK`:
+
+```
+Guest → EVENT_READY (msg_id=1, WANT_ACK, version)   → Host
+Host  → MVCP_ACK   (msg_id=1, IS_RESPONSE, ok)      → Guest
+
+Guest → EVENT_LOG  (msg_id=2, WANT_ACK, level, msg)  → Host
+Host  → MVCP_ACK   (msg_id=2, IS_RESPONSE, ok)      → Guest
+```
+
+If the host cannot process the event (ring buffer full, no handler),
+it sends `MVCP_ACK` with a non-zero status:
+
+```
+Guest → EVENT_READY (msg_id=1, WANT_ACK)             → Host
+Host  → MVCP_ACK   (msg_id=1, status=0x02, "ring buffer full") → Guest
+```
+
+The guest SHOULD implement a timeout when waiting for `MVCP_ACK`. If
+the host does not acknowledge within the timeout, the guest treats
+the event as undelivered and may retry or drop the event.
 
 ## EVENT_READY (`0x80`)
 
@@ -26,12 +53,12 @@ Sent once when the guest finishes boot and all services are listening.
 
 ## EVENT_FILE_RECEIVED (`0x81`)
 
-Sent when a file import completes successfully.
+Sent when a file import completes successfully via the File Transfer
+service (port 9004).
 
 | Field | Encoding | Description |
 |-------|----------|-------------|
 | `path` | `string` | File path inside the guest |
-| `sha256` | `bytes` (32) | SHA256 hash of the received file |
 | `size` | `uint64` | File size in bytes |
 
 ## EVENT_MOUNT (`0x82`)

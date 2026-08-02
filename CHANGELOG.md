@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Status Service — port 9003 becomes bidirectional
+
+- **Port 9003 renamed**: Heartbeat → Status. The port now carries both periodic
+  heartbeats (G→H, `msg_id=0`, type `0x07`) and status RPC (H→G→H, correlated
+  `msg_id`).
+- **GET_STATUS/STATUS moved**: `0x05`/`0x06` move from port 9000 (Control) to
+  port 9003 (Status). Port 9000 is now purely operational (PING, SHUTDOWN,
+  EXEC, TOOL_CALL); port 9003 is the monitoring/status channel.
+- **Heartbeat unchanged**: still type `0x07`, `uint64 seq`, 1s interval,
+  `msg_id=0`. The host still uses `time.Now()` for liveness detection.
+- **Bidirectional multiplexing**: a single vsock connection carries both
+  unidirectional heartbeat ticks and request/response status queries.
+  The `type` byte disambiguates: `0x07` = heartbeat, `0x06` = STATUS response.
+- **STATUS payload unchanged**: `string version`, `uint32 pid`, `bool shutting_down`.
+- **Docs**: new `docs/services/status.md` supersedes `docs/services/heartbeat.md`;
+  `control.md` cross-references status.md for `GET_STATUS`/`STATUS`.
+
+### Tools Service — generic tool dispatch (port 9005)
+
+- **New port 9005**: LLM-facing tool calls with full RPC semantics (msg_id pipelining).
+- **Generic dispatch model**: `TOOL_CALL`/`TOOL_RESULT` carry a `tool_name` string and
+  opaque `params`/`result` bytes — custom tools can be registered without protocol changes.
+- **Built-in tools**: `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`.
+- **Introspection**: `LIST_TOOLS`/`LIST_TOOLS_RESULT` lets the host discover available tools.
+- **Unary only**: all tool calls are request→response, no streaming. Head-of-line blocking
+  never applies.
+- **Error model**: `TOOL_RESULT(ok=false)` for tool-level failures; error envelope `0xFE`
+  with `UNKNOWN_TOOL` (`0x0009`) for unregistered tools.
+- **Range repurposed**: `0x30`–`0x3F` was "Filesystem (reserved)" — now "Tools" on port 9005.
+  The `bash` tool internally forwards to the Execution service (port 9000 EXEC).
+
+### File Transfer Service — simplified design (port 9004)
+
+- **Separated from RPC layer**: File Transfer moves to dedicated port 9004.
+  No `msg_id`, no RPC abstraction — pure MVCP wire with sender-push streaming.
+- **Host always initiates**: the host decides whether to import or export.
+  `XFER_INIT` carries a `dir` field (`0x00` import, `0x01` export).
+- **Reduced message types**: 3 types (`XFER_INIT`, `XFER_CHUNK`, `XFER_DONE`)
+  replace the previous 6 (`FILE_EXPORT_REQ/CHUNK/END`, `FILE_IMPORT_REQ/CHUNK/RESULT`).
+- **No SHA256 verification**: simple and fast. Integrity at transport layer.
+- **Error model**: mid-transfer failures signal by closing the connection.
+  `XFER_DONE(ok=false)` for immediate failures (e.g. file not found).
+
 ### v1 (0x01) — Unified transport + VPP companion protocol
 
 - **Unified transport frame**: all ports use a single `ReadFrame`/`WriteFrame`
@@ -12,7 +55,7 @@
   header is just a 1-byte type — 5 bytes total overhead vs MVCP's 10.
   Interactive senders should batch small writes to amortise the header cost.
 - **Port-agnostic design**: the protocol places no constraints on port
-  numbers. Port assignments (9000–9003) are Shifty conventions.
+   numbers. Port assignments (9000–9005) are Shifty conventions.
 - **Connection handshake**: MVCP ports use 5-byte handshake (`MVCP`+`0x01`);
   VPP ports use 4-byte handshake (`VPP`+`0x01`). The magic string tells
   the host which protocol to speak.

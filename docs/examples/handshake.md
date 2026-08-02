@@ -4,7 +4,7 @@ The handshake is sent by the guest immediately after accepting a
 vsock connection, before any framed messages. Two handshake variants
 exist — one per protocol.
 
-## MVCP Handshake (ports 9000, 9002, 9003 — 5 bytes, Guest → Host)
+## MVCP Handshake (ports 9000, 9002, 9003, 9004, 9005 — 5 bytes, Guest → Host)
 
 ```
 magic:   0x4D 0x56 0x43 0x50  ("MVCP")
@@ -76,7 +76,7 @@ func ValidateHandshake(r io.Reader, expectedMagic string) error {
 ## Notes
 
 - Fire-and-forget: no host response, no round-trip.
-- Handshake is sent on every connection, including ports 9002 and 9003.
+- Handshake is sent on every connection, including ports 9002, 9003, 9004, and 9005.
 - The magic string tells the host which protocol to speak:
   `"MVCP"` → MVCP message dispatch (type+flags+msg_id).
   `"VPP"`  → VPP frame dispatch (type-only).

@@ -3,41 +3,43 @@
 ## Request/Response Pipelining
 
 MVCP supports pipelined request/response on a single connection via
-`msg_id` correlation:
+`msg_id` correlation. The RPC layer (port 9000) formalises this:
 
-- Host sends requests with incrementing `msg_id` values (1, 2, 3, …).
-- Guest processes in order and sends responses with matching `msg_id`
-  and `IS_RESPONSE` flag.
-- The stream is ordered — responses arrive in request order on the same
-  connection.
+- **Client** allocates non-zero `msg_id` values (1, 2, 3, …) and stores
+  each in a pending map.
+- **Server** processes messages and sends responses with matching
+  `msg_id` and `IS_RESPONSE` flag.
+- The stream is ordered — frames arrive in order on the same connection.
 - Responses are correlated by `msg_id`, not by position — enabling
-  future out-of-order delivery if needed.
+  out-of-order delivery if the server processes in parallel.
+
+See [services/rpc.md](services/rpc.md) for the full pipelining contract.
 
 ## Streaming and Head-of-Line Blocking
 
-Once a streaming message starts (file transfer, exec stdout/stderr):
+Once a streaming RPC call starts on port 9000 (exec stdout/stderr):
 
 - **No other request can be sent** on the same connection until the
   stream ends (last frame with `IS_STREAM_MORE` cleared).
 - This is an accepted tradeoff — avoiding frame-interleaving complexity.
 
 For concurrent operations while a stream is active, open **multiple
-connections** to the same port (see below).
+connections** to port 9000.
 
 ## Multiple Connections to Port 9000
 
 Multiple connections to port 9000 are allowed. Each connection is an
-independent request/response stream. This enables concurrent EXEC and
-FILE_EXPORT from different host-side goroutines without head-of-line
-blocking.
-
-Example: start a long-running file export on connection A, while
-sending a STAT request on connection B.
+independent RPC stream with its own `msg_id` counter. This enables
+concurrent EXEC calls from different host-side goroutines without
+head-of-line blocking.
 
 ## One-Way Messages
 
-Ports 9002 (events) and 9003 (heartbeat) use `msg_id = 0` for all
-frames — they are fire-and-forget with no response correlation.
+Ports 9002 (events), 9003 (heartbeat), and 9004 (file transfer) use
+MVCP directly without the RPC layer. Events and `XFER_INIT` carry
+`WANT_ACK` (`0x04`) — the receiver responds with `MVCP_ACK` (`0xFB`)
+to confirm dispatch. Heartbeat (`msg_id=0`) remains fire-and-forget
+with no ack.
 
 ## Connection Lifecycle
 
@@ -53,5 +55,5 @@ frames — they are fire-and-forget with no response correlation.
 See also:
 - [01-transport.md](01-transport.md) for the vsock connection model and multiple-connection semantics.
 - [02-wire-format.md](02-wire-format.md) for `msg_id` semantics and `IS_STREAM_MORE` flag details.
+- [services/rpc.md](services/rpc.md) for the RPC layer concurrency contract (pipelining, head-of-line, timeouts).
 - [services/execution.md](services/execution.md) for streaming EXEC semantics.
-- [services/file-transfer.md](services/file-transfer.md) for chunked streaming semantics.

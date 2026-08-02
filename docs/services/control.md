@@ -1,10 +1,10 @@
 # Control Service (Port 9000)
 
 > Message type range `0x00`–`0x0F`. Bidirectional H↔G.
+> Part of the RPC layer. See [rpc.md](rpc.md) for the request/response contract.
 
-The control service carries request/response RPC on port 9000. Every
-frame on this port uses `msg_id` correlation (except `HEARTBEAT`, which
-lives on its own port 9003).
+The control service carries request/response RPC on port 9000 via the
+RPC layer. Every control message uses `msg_id` correlation.
 
 ## Message Types
 
@@ -15,12 +15,11 @@ lives on its own port 9003).
 | `0x02` | `PONG` | G→H | *(none)* |
 | `0x03` | `SHUTDOWN` | H→G | *(none)* |
 | `0x04` | `SHUTDOWN_ACK` | G→H | *(none)* |
-| `0x05` | `GET_STATUS` | H→G | *(none)* |
-| `0x06` | `STATUS` | G→H | `string version`, `uint32 pid`, `bool shutting_down` |
 | `0x07` | `HEARTBEAT` | G→H | `uint64 seq` — *(documented in [heartbeat.md](heartbeat.md))* |
+| `0x05`–`0x06` | *(reserved)* | — | — |
 | `0x08`–`0x0F` | *(reserved)* | — | — |
 
-> `HEARTBEAT` (`0x07`) uses port 9003, not port 9000. See [heartbeat.md](heartbeat.md).
+> `GET_STATUS` (`0x05`) and `STATUS` (`0x06`) use port 9003, not port 9000. See [status.md](status.md).
 
 ## PING / PONG
 
@@ -41,20 +40,9 @@ Graceful VM shutdown sequence.
 
 Both messages have empty payload. `SHUTDOWN_ACK` carries `IS_RESPONSE`.
 
-## GET_STATUS / STATUS
-
-Query guest runtime status.
-
-**STATUS** payload:
-
-| Field | Encoding | Description |
-|-------|----------|-------------|
-| `version` | `string` | vhandler version string |
-| `pid` | `uint32` | Guest PID 1 process ID |
-| `shutting_down` | `bool` | `true` if shutdown sequence is in progress |
-
 ---
 
 See also:
-- [heartbeat.md](heartbeat.md) for the heartbeat service (port 9003).
+- [rpc.md](rpc.md) for the RPC layer contract (pipelining, streaming, timeouts, error handling).
+- [status.md](status.md) for GET_STATUS/STATUS and heartbeat (port 9003).
 - [examples/ping-pong.md](../examples/ping-pong.md) for PING/PONG wire example.

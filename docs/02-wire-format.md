@@ -40,7 +40,7 @@ this for both host and guest.
 
 ## MVCP Protocol Layer
 
-On ports using MVCP (9000, 9002, 9003 under Shifty conventions), the
+On ports using MVCP (9000, 9002, 9003, 9004, 9005 under Shifty conventions), the
 transport payload is structured as:
 
 ```
@@ -59,6 +59,10 @@ length  = 6 + M
 | `flags`  | 1 byte  | Bitfield: `0x01` = `IS_RESPONSE`, `0x02` = `IS_STREAM_MORE`.              |
 | `msg_id` | 4 bytes | Request/response correlation token. 0 for one-way messages. Big-endian.   |
 | `body`   | M bytes | Type-specific binary encoding.                                             |
+
+Port 9000 carries an **RPC layer** on top of MVCP that formalises
+`msg_id` semantics for request/response, pipelining, and streaming.
+See [services/rpc.md](services/rpc.md) for the full specification.
 
 ### MVCP Parser (Go)
 
@@ -89,11 +93,12 @@ See [services/console.md](services/console.md) for the full VPP specification.
 
 ## Flags (MVCP only)
 
-| Bit         | Name             | Meaning                                                                                            |
-|-------------|------------------|----------------------------------------------------------------------------------------------------|
-| `0x01`      | `IS_RESPONSE`    | This frame is a response to a previous request (msg_id matches the request).                       |
-| `0x02`      | `IS_STREAM_MORE` | More frames follow for this logical message.                                                       |
-| `0x04`–`0x80`| *(reserved)*     | Must be 0.                                                                                         |
+| Bit          | Name              | Meaning                                                                                            |
+|--------------|-------------------|----------------------------------------------------------------------------------------------------|
+| `0x01`       | `IS_RESPONSE`     | This frame is a response to a previous request (msg_id matches the request).                       |
+| `0x02`       | `IS_STREAM_MORE`  | More frames follow for this logical message.                                                       |
+| `0x04`       | `WANT_ACK`        | Sender expects an `MVCP_ACK` (type `0xFB`) frame with matching `msg_id` from the receiver.         |
+| `0x08`–`0x80`| *(reserved)*      | Must be 0.                                                                                         |
 
 Frames with `IS_STREAM_MORE` set are part of a logical message split
 across multiple frames. The final frame clears the flag. `msg_id` is
@@ -102,11 +107,87 @@ constant across all frames of a single logical message.
 An error is signaled by `IS_RESPONSE` + `type=0xFE` — no separate error
 flag is needed.
 
+## Application-Level Acknowledgment (WANT_ACK)
+
+The vsock `SOCK_STREAM` guarantees transport-level reliability (ordered
+delivery, retransmission, no duplicates), but it does **not** confirm
+application-level processing. The `WANT_ACK` flag bridges this gap: the
+sender sets it when it needs the receiver to confirm that the message
+was received and dispatched.
+
+### MVCP_ACK (`0xFB`)
+
+When a receiver processes a frame with `WANT_ACK` set, it MUST respond
+with an `MVCP_ACK` frame:
+
+```
+┌──────┬───────┬──────────┬──────────────┐
+│ type │ flags │ msg_id   │ body         │
+│ 0xFB │ 0x01  │ (match)  │ ack payload  │
+└──────┴───────┴──────────┴──────────────┘
+```
+
+| Field  | Value                                              |
+|--------|----------------------------------------------------|
+| `type` | `0xFB`                                             |
+| `flags`| `0x01` (`IS_RESPONSE`)                              |
+| `msg_id`| Matches the original message's `msg_id`            |
+| `body` | `uint8 status` + `string error_msg` (empty if ok)  |
+
+`status` values:
+
+| Status | Meaning                                                        |
+|--------|----------------------------------------------------------------|
+| `0x00` | OK — message received and dispatched to the handler.           |
+| `0x01` | Generic error — details in `error_msg`.                        |
+| `0x02` | Resource exhausted (ring buffer full, no memory).              |
+| `0x03` | Handler not registered — no handler exists for this type.      |
+
+### Semantics
+
+`MVCP_ACK` confirms **dispatch**, not **execution**:
+
+- For an `EXEC` command: `MVCP_ACK` means "command received, process
+  spawned" — the result (`EXEC_RESULT`) arrives later.
+- For an `EVENT_READY`: `MVCP_ACK` means "event queued/enqueued" — the
+  host has accepted the notification.
+- For `XFER_INIT`: `MVCP_ACK` means "ready to receive chunks."
+
+The ack is a fire-and-forget confirmation — the sender does **not** wait
+for the ack before sending subsequent messages (except in file transfer
+INIT, where the sender must wait before streaming chunks).
+
+### What Does Not Use WANT_ACK
+
+- **Streaming chunks** with `IS_STREAM_MORE` set — the final response
+  frame serves as the cumulative ack.
+- **Console (VPP)** — interactive terminal I/O on port 9001.
+- **Heartbeat** — periodic liveness signal on port 9003 (`msg_id=0`).
+- **Messages that already carry `IS_RESPONSE`** — the response is
+  implicitly the ack.
+
+### Wire Example
+
+**MVCP_ACK** (receiver → sender, 14 bytes on wire):
+
+```
+ length: 0x00_00_00_0E   (14 = 6 header + 8 body)
+   type: 0xFB             (MVCP_ACK)
+  flags: 0x01             (IS_RESPONSE)
+ msg_id: 0x00_00_00_01    (matches the acknowledged message)
+   body:
+    uint8 0x00             → OK
+    string ""              → empty (no error)
+```
+
 ## msg_id Semantics (MVCP only)
 
 - **Request:** sender allocates a non-zero `msg_id`. Responses echo the
   same id with `IS_RESPONSE` set.
-- **One-way message** (heartbeat, event, notification): `msg_id = 0`.
+- **One-way message with ack:** events (`0x80`–`0x8F`) and `XFER_INIT`
+  carry a non-zero `msg_id` with `WANT_ACK`. The receiver echoes the
+  `msg_id` in the `MVCP_ACK` response.
+- **One-way message without ack:** heartbeat uses `msg_id = 0`.
 - **Streaming:** all chunks of a message share the same `msg_id`.
   The first frame carries the request type; subsequent frames carry the
   chunk type. The last frame clears `IS_STREAM_MORE`.

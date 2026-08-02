@@ -35,7 +35,7 @@ Command succeeded (exit 0), empty stdout/stderr, took 5ms.
 
 ```
  length: 0x00_00_00_1C   (28 = 6 + 22 payload)
-   type: 0x11             (EXEC_RESULT)
+   type: 0x12             (EXEC_RESULT)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_02    (matches request)
 payload:
@@ -55,9 +55,10 @@ protocol.WriteStringMap(&buf, nil)       // env
 protocol.WriteUint32(&buf, 30000)        // timeout_ms
 
 frame := &protocol.Frame{
-    Type:    protocol.TypeExec,
+    Type:    protocol.TypeEXEC,
+    Flags:   0,
     MsgID:   2,
-    Payload: buf.Bytes(),
+    Body:    buf.Bytes(),
 }
 frame.WriteTo(conn)
 ```

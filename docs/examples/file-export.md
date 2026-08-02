@@ -1,93 +1,206 @@
 # Example: File Export
 
-Export a 64KB file from guest to host in 16KB chunks.
+Export a 24KB file from guest to host in 16KB chunks. Host initiates.
 
-## FILE_EXPORT_REQ (Guest → Host)
+## XFER_INIT (Host → Guest)
 
-Request to export `/tmp/result.bin` with 16KB chunks.
+Host requests the guest to export `/tmp/result.bin`. Sets `WANT_ACK`.
 
 ```
- length: 0x00_00_00_16   (22 = 6 + 16 payload)
-   type: 0x20             (FILE_EXPORT_REQ)
-  flags: 0x00
- msg_id: 0x00_00_00_03
-payload:
-  string "/tmp/result.bin" → 0x0010 "/tmp/result.bin"
-  uint32 16384             → 0x00_00_40_00
+ length: 0x00_00_00_1D   (29 = 6 + 23 payload)
+   type: 0x20             (XFER_INIT)
+  flags: 0x04             (WANT_ACK)
+ msg_id: 0x00_00_00_01
+ payload:
+   string "/tmp/result.bin" → 0x0010 "/tmp/result.bin"
+   uint32 0                → 0x00_00_00_00   (size unknown for export)
+   uint8  0x01             → 0x01             (dir=export)
+```
+
+## MVCP_ACK (Guest → Host)
+
+Guest confirms readiness before sending chunks.
+
+```
+ length: 0x00_00_00_0E   (14 = 6 + 8 body)
+   type: 0xFB             (MVCP_ACK)
+  flags: 0x01             (IS_RESPONSE)
+ msg_id: 0x00_00_00_01    (matches INIT)
+   body:
+    uint8 0x00             → OK
+    string ""              → empty
 ```
 
 ## Chunk 0 (Guest → Host)
 
 ```
  length: 0x00_00_40_10   (16394 = 6 + 4 + 16384)
-   type: 0x21             (FILE_EXPORT_CHUNK)
+   type: 0x21             (XFER_CHUNK)
   flags: 0x02             (IS_STREAM_MORE)
- msg_id: 0x00_00_00_03    (matches request)
-payload:
-  uint32 0                → seq=0
-  bytes  [16384 raw bytes] → 0x00_00_40_00 + raw data
+ payload:
+   uint32 0               → seq=0
+   bytes  [16384 raw bytes] → 0x00_00_40_00 + raw data
 ```
 
-## Chunks 1–3
-
-Same pattern, seq 1–3, `IS_STREAM_MORE` flag set on chunks 1–2,
-cleared on chunk 3 (the last data chunk).
-
-## FILE_EXPORT_END (Guest → Host)
+## Chunk 1 — Last (Guest → Host)
 
 ```
- length: 0x00_00_00_2B   (43 = 6 + 4 + 32)
-   type: 0x22             (FILE_EXPORT_END)
-  flags: 0x01             (IS_RESPONSE, IS_STREAM_MORE cleared)
- msg_id: 0x00_00_00_03
-payload:
-  uint32 4                → total_chunks=4
-  bytes  [32-byte SHA256]
+ length: 0x00_00_20_0E   (8206 = 6 + 4 + 8196)
+   type: 0x21             (XFER_CHUNK)
+  flags: 0x00             (no MORE — last chunk)
+ payload:
+   uint32 1               → seq=1
+   bytes  [8196 raw bytes] → 0x00_00_20_04 + raw data
 ```
 
-## Go: Receiving a File Export
+## XFER_DONE (Host → Guest)
+
+Host confirms with verification fields.
+
+```
+ length: 0x00_00_00_14   (20 = 6 + 14 payload)
+   type: 0x22             (XFER_DONE)
+  flags: 0x01             (IS_RESPONSE)
+ msg_id: 0x00_00_00_01    (matches INIT)
+ payload:
+   bool true              → 0x01 (ok)
+   uint32 2               → 0x00_00_00_02 (chunks_received)
+   uint64 24576           → 0x00_00_00_00_00_00_60_00 (bytes_written)
+```
+
+## Go: Host Receiving an Export
 
 ```go
-var buf bytes.Buffer
-var totalChunks uint32
-
-// read FILE_EXPORT_REQ
-req, _ := protocol.ReadFrame(conn)
-r := bytes.NewReader(req.Payload)
-path, _ := protocol.ReadString(r)
-chunkSize, _ := protocol.ReadUint32(r)
-
-// read chunks
-for {
-    frame, _ := protocol.ReadFrame(conn)
-    r := bytes.NewReader(frame.Payload)
-
-    switch frame.Type {
-    case protocol.TypeFileExportChunk:
-        seq, _ := protocol.ReadUint32(r)
-        data, _ := protocol.ReadBytes(r)
-        buf.Write(data)
-
-    case protocol.TypeFileExportEnd:
-        totalChunks, _ = protocol.ReadUint32(r)
-        sha256sum, _ := protocol.ReadBytes(r)
-        break
+func receiveExport(conn net.Conn, outPath string) error {
+    frame, err := mvcp.ReadFrame(conn)
+    if err != nil {
+        return err
     }
-}
+    path, _ := mvcp.ReadString(frame.Body)
+    _, _ = mvcp.ReadUint32(frame.Body)  // totalSize (unknown for export)
+    _, _ = mvcp.ReadUint8(frame.Body)   // dir
 
-// verify SHA256
-actual := sha256.Sum256(buf.Bytes())
-if !bytes.Equal(actual[:], sha256sum) {
-    // hash mismatch
+    // respond with MVCP_ACK to confirm readiness
+    ackBody := mvcp.EncodeAck(mvcp.AckOK, "")
+    ackFrame := mvcp.Frame{
+        Type: mvcp.TypeAck, Flags: mvcp.FlagResponse,
+        MsgID: frame.MsgID, Body: ackBody,
+    }
+    mvcp.WriteFrame(conn, ackFrame)
+
+    out, err := os.Create(outPath)
+    if err != nil {
+        return err
+    }
+    defer out.Close()
+
+    var chunksReceived uint32
+    var bytesWritten uint64
+    for {
+        frame, err := mvcp.ReadFrame(conn)
+        if err != nil {
+            out.Close()
+            os.Remove(outPath)
+            return err
+        }
+        buf := bytes.NewReader(frame.Body)
+        _, _ = mvcp.ReadUint32(buf) // seq
+        data, _ := mvcp.ReadBytes(buf)
+        n, _ := out.Write(data)
+        chunksReceived++
+        bytesWritten += uint64(n)
+        if frame.Flags&mvcp.FlagStreamMore == 0 {
+            break
+        }
+    }
+
+    // send XFER_DONE with verification
+    body := new(bytes.Buffer)
+    mvcp.WriteBool(body, true)
+    mvcp.WriteUint32(body, chunksReceived)
+    mvcp.WriteUint64(body, bytesWritten)
+    done := mvcp.Frame{
+        Type: mvcp.TypeXferDone, Flags: mvcp.FlagResponse,
+        MsgID: 1, Body: body.Bytes(),
+    }
+    return mvcp.WriteFrame(conn, done)
 }
 ```
 
-## Wire Size Comparison (64KB file)
+
+## Go: Guest Sending an Export
+
+```go
+func sendExport(conn net.Conn, filePath string) error {
+    // wait for XFER_INIT (host → guest)
+    initFrame, err := mvcp.ReadFrame(conn)
+    if err != nil {
+        return err
+    }
+    _, _ = mvcp.ReadString(initFrame.Body)   // path
+    _, _ = mvcp.ReadUint32(initFrame.Body)   // totalSize
+    _, _ = mvcp.ReadUint8(initFrame.Body)    // dir
+
+    f, err := os.Open(filePath)
+    if err != nil {
+        // send MVCP_ACK with error
+        ackBody := mvcp.EncodeAck(mvcp.AckGenericError, err.Error())
+        ackFrame := mvcp.Frame{
+            Type: mvcp.TypeAck, Flags: mvcp.FlagResponse,
+            MsgID: initFrame.MsgID, Body: ackBody,
+        }
+        mvcp.WriteFrame(conn, ackFrame)
+        return err
+    }
+    defer f.Close()
+
+    // send MVCP_ACK — ready
+    ackBody := mvcp.EncodeAck(mvcp.AckOK, "")
+    ackFrame := mvcp.Frame{
+        Type: mvcp.TypeAck, Flags: mvcp.FlagResponse,
+        MsgID: initFrame.MsgID, Body: ackBody,
+    }
+    mvcp.WriteFrame(conn, ackFrame)
+
+    buf := make([]byte, 16*1024)
+    seq := uint32(0)
+    for {
+        n, _ := f.Read(buf)
+        if n == 0 {
+            break
+        }
+        more := uint8(mvcp.FlagStreamMore)
+        peek := make([]byte, 1)
+        f.Read(peek)
+        if peek[0] == 0 {
+            more = 0x00
+        }
+        payload := encodeSeqAndData(seq, buf[:n])
+        chunk := mvcp.Frame{Type: mvcp.TypeXferChunk, Flags: more, Body: payload}
+        if err := mvcp.WriteFrame(conn, chunk); err != nil {
+            return err
+        }
+        seq++
+    }
+
+    // read XFER_DONE from host
+    doneFrame, _ := mvcp.ReadFrame(conn)
+    ok, _ := mvcp.ReadBool(doneFrame.Body)
+    chunksReceived, _ := mvcp.ReadUint32(doneFrame.Body)
+    bytesWritten, _ := mvcp.ReadUint64(doneFrame.Body)
+    _ = ok
+    _ = chunksReceived
+    _ = bytesWritten
+    return nil
+}
+```
+
+## Wire Size Comparison (24KB file)
 
 | Format | Bytes |
 |--------|-------|
-| MVCP binary | ~65,619 |
-| JSON base64 | ~87,227 |
+| MVCP binary | ~24,625 |
+| JSON base64 | ~32,800 |
 | **Saving** | **~25%** |
 
 Plus no base64 encode/decode CPU overhead on either side.

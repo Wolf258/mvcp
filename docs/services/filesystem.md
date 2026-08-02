@@ -1,6 +1,14 @@
-# Filesystem Service (Port 9000)
+# Filesystem Service (Obsolete)
 
-> Message type range `0x30`–`0x3F`. Carried on port 9000 (Control).
+> **Superseded by [tools.md](tools.md).**
+> Message type range `0x30`–`0x3F` is now used by the Tools service on port 9005.
+> The Filesystem service never shipped; it was always reserved.
+
+The wire format below is kept for historical reference. All filesystem
+operations (`read_file`, `write_file`, `stat`, `list_dir`, etc.) are now
+available through the Tools service's generic `TOOL_CALL` dispatch.
+
+---
 
 The filesystem service provides filesystem metadata and I/O operations
 inside the guest: working directory, stat, directory listing, and
@@ -58,8 +66,8 @@ List directory contents.
 
 ## READ_FILE / READ_FILE_RESULT
 
-Read a chunk of a file. For large files, use [file-transfer.md](file-transfer.md)
-(`FILE_EXPORT`) instead.
+Read a chunk of a file. For large files, use the File Transfer service
+(port 9004, [file-transfer.md](file-transfer.md)) instead of repeated READ_FILE.
 
 **READ_FILE_RESULT** payload:
 
@@ -70,8 +78,8 @@ Read a chunk of a file. For large files, use [file-transfer.md](file-transfer.md
 
 ## WRITE_FILE / WRITE_FILE_RESULT
 
-Write data to a file. For large files, use [file-transfer.md](file-transfer.md)
-(`FILE_IMPORT`) instead.
+Write data to a file. For large files, use the File Transfer service
+(port 9004, [file-transfer.md](file-transfer.md)) instead of repeated WRITE_FILE.
 
 **WRITE_FILE_RESULT** payload:
 

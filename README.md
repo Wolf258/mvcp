@@ -61,7 +61,8 @@ mvcp/
 | [docs/services/heartbeat.md](docs/services/heartbeat.md) | Heartbeat: periodic liveness | MVCP |
 | [docs/services/execution.md](docs/services/execution.md) | Execution: EXEC, streaming stdout/stderr | MVCP |
 | [docs/services/file-transfer.md](docs/services/file-transfer.md) | File transfer: chunked export/import | MVCP |
-| [docs/services/filesystem.md](docs/services/filesystem.md) | Filesystem: STAT, LIST_DIR, READ/WRITE, CWD | MVCP |
+| [docs/services/filesystem.md](docs/services/filesystem.md) | *(Obsolete)* Superseded by Tools | MVCP |
+| [docs/services/tools.md](docs/services/tools.md) | Tools: generic TOOL_CALL, read_file/write_file/bash/glob/grep | MVCP |
 | [docs/services/vm-commands.md](docs/services/vm-commands.md) | *(Planned)* VM-specific operations | MVCP |
 
 ### Examples
@@ -72,9 +73,10 @@ mvcp/
 | [docs/examples/ping-pong.md](docs/examples/ping-pong.md) | PING/PONG liveness check |
 | [docs/examples/exec.md](docs/examples/exec.md) | EXEC command with result |
 | [docs/examples/exec-streaming.md](docs/examples/exec-streaming.md) | EXEC with streaming stdout/stderr |
-| [docs/examples/file-export.md](docs/examples/file-export.md) | Chunked file export with SHA256 |
+| [docs/examples/file-export.md](docs/examples/file-export.md) | Chunked file export (host-initiated, 3-type protocol) |
 | [docs/examples/heartbeat.md](docs/examples/heartbeat.md) | Heartbeat sequence |
 | [docs/examples/error.md](docs/examples/error.md) | Error responses |
+| [docs/examples/tool-calls.md](docs/examples/tool-calls.md) | Tool call wire examples (read_file, write_file, bash, glob, grep) |
 
 ## Quick Reference
 
@@ -101,7 +103,7 @@ mvcp/
 └──────────┴─────────────────────────────┘
 ```
 
-### MVCP Inner Header (ports 9000, 9002, 9003)
+### MVCP Inner Header (ports 9000, 9002, 9003, 9004, 9005)
 
 ```
 ┌──────┬───────┬──────────┬──────────┐
@@ -140,6 +142,8 @@ The protocol is **port-agnostic**. These are conventions, not requirements.
 | 9001 | Console | VPP |
 | 9002 | Events | MVCP |
 | 9003 | Heartbeat | MVCP |
+| 9004 | File Transfer | MVCP |
+| 9005 | Tools | MVCP |
 
 ### Message Categories (MVCP)
 
@@ -147,8 +151,8 @@ The protocol is **port-agnostic**. These are conventions, not requirements.
 |-------|----------|-------|
 | `0x00–0x0F` | Control | 8 types (PING, PONG, SHUTDOWN, STATUS, HEARTBEAT, …) |
 | `0x10–0x1F` | Execution | 4 types (EXEC, EXEC_RESULT, EXEC_STDOUT, EXEC_STDERR) |
-| `0x20–0x2F` | File Transfer | 6 types (EXPORT_REQ, EXPORT_CHUNK, IMPORT_REQ, …) |
-| `0x30–0x3F` | Filesystem | 10 types (STAT, LIST_DIR, READ_FILE, WRITE_FILE, …) |
+| `0x20–0x2F` | File Transfer | 3 types (XFER_INIT, XFER_CHUNK, XFER_DONE) |
+| `0x30–0x3F` | Tools | 4 types (TOOL_CALL, TOOL_RESULT, LIST_TOOLS, LIST_TOOLS_RESULT) |
 | `0x80–0x8F` | Events | 5 types (EVENT_READY, EVENT_FILE_RECEIVED, EVENT_LOG, …) |
 | `0xFE` | Error | 1 type |
 

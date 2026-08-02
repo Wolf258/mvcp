@@ -18,7 +18,7 @@ long as both sides agree.
 ├──────────────────────┬───────────────────────────────┤
 │ MVCP wire format     │ VPP wire format               │
 │ type+flags+msg_id(6B)│ type(1B)                      │
-│ ports 9000/9002/9003 │ port 9001                     │
+│ ports 9000/9002/9003/9004/9005 │ port 9001                     │
 ├──────────────────────┴───────────────────────────────┤
 │ TRANSPORT (shared by all ports)                       │
 │ ReadFrame / WriteFrame — length(4B BE) + payload      │
@@ -69,19 +69,21 @@ to amortise the fixed header cost.
 
 ## Service Ports (Shifty convention)
 
-| Port | Service      | Protocol | Direction     |
-|------|------------- |----------|-------------- |
-| 9000 | Control/RPC  | MVCP     | Bidirectional |
-| 9001 | Console      | VPP      | Bidirectional |
-| 9002 | Events       | MVCP     | Guest → Host  |
-| 9003 | Heartbeat    | MVCP     | Guest → Host  |
+| Port | Service      | Protocol | Direction            |
+|------|------------- |----------|--------------------- |
+| 9000 | Control/RPC  | MVCP     | Bidirectional        |
+| 9001 | Console      | VPP      | Bidirectional        |
+| 9002 | Events       | MVCP     | Guest → Host         |
+| 9003 | Heartbeat    | MVCP     | Guest → Host         |
+| 9004 | File Transfer| MVCP     | Host-initiated, bidir|
+| 9005 | Tools        | MVCP     | Bidirectional        |
 
 These are conventions. The protocol places no constraints on port
 numbers. An implementation may re-map services to different ports.
 
 ## vsock Guarantees
 
-`SOCK_STREAM` provides:
+`SOCK_STREAM` provides **transport-level** reliability:
 
 - Ordered delivery
 - No duplicates
@@ -90,8 +92,19 @@ numbers. An implementation may re-map services to different ports.
 - Flow control
 
 Because the transport guarantees these, MVCP does **not** need: checksums,
-ACKs, retransmission, or sequence numbers for ordering. Only framing +
+retransmission, or sequence numbers for ordering. Only framing +
 type dispatch + encoding.
+
+## Application-Level Acknowledgment
+
+Transport guarantees ensure data reaches the other side, but they do
+**not** confirm that the receiver successfully processed the payload (e.g.
+wrote a chunk to disk, enqueued an event). MVCP provides optional
+application-level acknowledgment via the `WANT_ACK` flag (`0x04`) and
+`MVCP_ACK` type (`0xFB`).
+
+See [02-wire-format.md](02-wire-format.md) for the full `WANT_ACK`
+specification.
 
 ## Host-Side Transport (Shifty)
 
@@ -106,7 +119,7 @@ The host connects to Firecracker's per-VM vsock Unix socket:
 
 ## Guest-Side Transport (Shifty)
 
-1. Open `AF_VSOCK` `SOCK_STREAM` listeners on ports 9000–9003
+1. Open `AF_VSOCK` `SOCK_STREAM` listeners on ports 9000–9005
 2. `Accept()` connection
 3. Immediately write protocol handshake (see below)
 4. Enter `ReadFrame` / dispatch loop
@@ -117,7 +130,7 @@ Every connection starts with a handshake sent by the guest immediately
 after accept. The magic string tells the host which protocol to speak on
 this connection.
 
-### MVCP handshake (ports 9000, 9002, 9003 — 5 bytes)
+### MVCP handshake (ports 9000, 9002, 9003, 9004, 9005 — 5 bytes)
 
 ```
 ┌─────────────────┬─────────┐
@@ -159,9 +172,9 @@ Fire-and-forget. No response from host, no round-trip.
 ## Multiple Connections
 
 Multiple connections to the same port are allowed. Each connection is an
-independent request/response stream. This enables concurrent EXEC and
-FILE_EXPORT from different host-side goroutines without head-of-line
-blocking.
+independent request/response stream. This enables concurrent EXEC from
+different host-side goroutines without head-of-line blocking.
+File transfers use a dedicated port (9004) and never block RPC traffic.
 
 Port 9001 (console) uses VPP — a separate binary protocol with its own
 4-byte handshake and a thinner 1-byte inner header. One connection = one

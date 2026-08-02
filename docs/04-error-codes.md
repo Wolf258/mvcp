@@ -24,6 +24,8 @@ Direction: both host-to-guest and guest-to-host.
 | `0x0006` | `TIMEOUT` | Operation exceeded its deadline |
 | `0x0007` | `NOT_A_DIRECTORY` | Path expected to be a directory but was not |
 | `0x0008` | `BAD_VERSION` | Protocol version not supported by the receiver |
+| `0x0009` | `UNKNOWN_TOOL` | Tool name not registered in the guest |
+| `0x000A` | `TOOL_FAILED` | Tool executed but returned an error (details in error_msg) |
 
 ## Wire Example
 
