@@ -184,15 +184,26 @@ func ReadMVCPFrame(r io.Reader) (*Frame, error) {
 }
 
 func WriteMVCPFrame(w io.Writer, f *Frame) error {
-	var buf bytes.Buffer
-	buf.Grow(frameHeaderSize + len(f.Body))
-	buf.WriteByte(f.Type)
-	buf.WriteByte(f.Flags)
-	var id [4]byte
-	binary.BigEndian.PutUint32(id[:], f.MsgID)
-	buf.Write(id[:])
-	buf.Write(f.Body)
-	return WriteFrame(w, buf.Bytes())
+	_, err := w.Write(EncodeMVCPFrame(f))
+	return err
+}
+
+// EncodeMVCPFrame serializes a Frame into its on-wire byte form:
+// 4-byte big-endian length prefix + 6-byte MVCP header (type, flags,
+// msgID) + body. Equivalent to WriteMVCPFrame but returns the bytes
+// instead of writing them, for callers that need to push the encoded
+// frame through a non-io.Writer sink (e.g. unix.Write on a vsock fd).
+func EncodeMVCPFrame(f *Frame) []byte {
+	inner := make([]byte, frameHeaderSize+len(f.Body))
+	inner[0] = f.Type
+	inner[1] = f.Flags
+	binary.BigEndian.PutUint32(inner[2:6], f.MsgID)
+	copy(inner[6:], f.Body)
+
+	frame := make([]byte, 4+len(inner))
+	binary.BigEndian.PutUint32(frame[:4], uint32(len(inner)))
+	copy(frame[4:], inner)
+	return frame
 }
 
 func EncodeStarted(stream bool) []byte {
