@@ -103,7 +103,7 @@ mvcp/
 └──────────┴─────────────────────────────┘
 ```
 
-### MVCP Inner Header (ports 9000, 9002, 9003, 9004, 9005)
+### MVCP Inner Header (ports 9000, 9002, 9003, 9004)
 
 ```
 ┌──────┬───────┬──────────┬──────────┐
@@ -143,7 +143,6 @@ The protocol is **port-agnostic**. These are conventions, not requirements.
 | 9002 | Events | MVCP |
 | 9003 | Heartbeat | MVCP |
 | 9004 | File Transfer | MVCP |
-| 9005 | Tools | MVCP |
 
 ### Message Categories (MVCP)
 

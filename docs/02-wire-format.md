@@ -40,7 +40,7 @@ this for both host and guest.
 
 ## MVCP Protocol Layer
 
-On ports using MVCP (9000, 9002, 9003, 9004, 9005 under Shifty conventions), the
+On ports using MVCP (9000, 9002, 9003, 9004 under Shifty conventions), the
 transport payload is structured as:
 
 ```

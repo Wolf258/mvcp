@@ -37,7 +37,7 @@ channels reflect these distinctions.
 |-------------|-------------------------|----------------------------|----------------------------|
 | **Created by** | LLM (one-shot RPC)    | LLM (spawn request)        | VM manifest / init config  |
 | **Lifetime**   | Single invocation     | Agent session or persistent| VM lifetime                |
-| **Channel**    | Port 9005 (tools)     | Port 9000 (RPC)            | Port 9000 (RPC)            |
+| **Channel**    | Port 9000 (RPC)       | Port 9000 (RPC)            | Port 9000 (RPC)            |
 | **Identity**   | None                  | `process_id`               | `service_id`               |
 | **PTY**        | No                    | Optional                   | No (stdout/stderr only)    |
 | **Streaming**  | Unary only            | Yes (buffered + eventing)  | Yes (buffered)             |
@@ -58,7 +58,7 @@ no ongoing state — every call is independent.
 REQUESTED → RUNNING → COMPLETED
 ```
 
-- **Channel**: port 9005 (MVCP + RPC).
+- **Channel**: port 9000 (MVCP + RPC).
 - **Wire**: `TOOL_CALL` (type `0x30`) → `TOOL_RESULT` (type `0x31`).
 - **No identity**: there is no `tool_id`. The tool is the function, not
   an entity.
@@ -260,8 +260,7 @@ VM BOOT
    │       ├── Port 9001: VPP console
    │       ├── Port 9002: Events
    │       ├── Port 9003: Heartbeat
-   │       ├── Port 9004: File Transfer
-   │       └── Port 9005: Tools
+│       └── Port 9004: File Transfer
    │
    └── 4. Agent connects → spawns processes → tools → disconnect
 ```
@@ -290,7 +289,7 @@ All three workload types contribute to the VM's observability model:
 
 | Source    | Channel                  | Content                                   |
 |-----------|-------------------------|-------------------------------------------|
-| Tools     | Port 9005 (TOOL_RESULT) | Inline result data                        |
+| Tools     | Port 9000 (TOOL_RESULT) | Inline result data                        |
 | Tools     | Port 9002 (log events)  | Tool execution attempt + outcome          |
 | Processes | Port 9002 (events)      | PROC_EVENT on trigger match               |
 | Processes | Port 9001 (VPP/PTY)     | Interactive console attachment            |
@@ -300,7 +299,7 @@ All three workload types contribute to the VM's observability model:
 ---
 
 See also:
-- [tools.md](services/tools.md) — Tool service (port 9005) spec.
+- [tools.md](services/tools.md) — Tool service (port 9000) spec.
 - [execution.md](services/execution.md) — Execution service (one-shot EXEC, port 9000).
 - [events.md](services/events.md) — Event notifications (port 9002).
 - [console.md](services/console.md) — VPP interactive terminal (port 9001).

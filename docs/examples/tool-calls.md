@@ -1,6 +1,6 @@
 # Tool Calls — Wire Examples
 
-> Request/response wire breakdowns for the Tools service (port 9005).
+> Request/response wire breakdowns for the Tools service (port 9000).
 > All frames use the RPC layer: `IS_RESPONSE` on responses, `msg_id`
 > correlation, error envelope `0xFE` on protocol errors.
 

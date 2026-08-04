@@ -19,9 +19,9 @@
 - **Docs**: new `docs/services/status.md` supersedes `docs/services/heartbeat.md`;
   `control.md` cross-references status.md for `GET_STATUS`/`STATUS`.
 
-### Tools Service — generic tool dispatch (port 9005)
+### Tools Service — generic tool dispatch (port 9000)
 
-- **New port 9005**: LLM-facing tool calls with full RPC semantics (msg_id pipelining).
+- **Port 9000**: LLM-facing tool calls share the control plane with full RPC semantics (msg_id pipelining).
 - **Generic dispatch model**: `TOOL_CALL`/`TOOL_RESULT` carry a `tool_name` string and
   opaque `params`/`result` bytes — custom tools can be registered without protocol changes.
 - **Built-in tools**: `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`.
@@ -30,7 +30,7 @@
   never applies.
 - **Error model**: `TOOL_RESULT(ok=false)` for tool-level failures; error envelope `0xFE`
   with `UNKNOWN_TOOL` (`0x0009`) for unregistered tools.
-- **Range repurposed**: `0x30`–`0x3F` was "Filesystem (reserved)" — now "Tools" on port 9005.
+- **Range repurposed**: `0x30`–`0x3F` was "Filesystem (reserved)" — now "Tools" on port 9000.
   The `bash` tool internally forwards to the Execution service (port 9000 EXEC).
 
 ### File Transfer Service — simplified design (port 9004)
@@ -55,7 +55,7 @@
   header is just a 1-byte type — 5 bytes total overhead vs MVCP's 10.
   Interactive senders should batch small writes to amortise the header cost.
 - **Port-agnostic design**: the protocol places no constraints on port
-   numbers. Port assignments (9000–9005) are Shifty conventions.
+   numbers. Port assignments (9000–9004) are Shifty conventions.
 - **Connection handshake**: MVCP ports use 5-byte handshake (`MVCP`+`0x01`);
   VPP ports use 4-byte handshake (`VPP`+`0x01`). The magic string tells
   the host which protocol to speak.

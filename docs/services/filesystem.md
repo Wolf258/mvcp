@@ -1,7 +1,7 @@
 # Filesystem Service (Obsolete)
 
 > **Superseded by [tools.md](tools.md).**
-> Message type range `0x30`–`0x3F` is now used by the Tools service on port 9005.
+> Message type range `0x30`–`0x3F` is now used by the Tools service on port 9000.
 > The Filesystem service never shipped; it was always reserved.
 
 The wire format below is kept for historical reference. All filesystem
