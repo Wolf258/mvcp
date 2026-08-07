@@ -64,7 +64,7 @@ emitted at most once per VM lifetime.
 emitted by the guest. Hosts that initiate host→guest actions
 on vsock ports **not** explicitly designated as "always
 available" in the vhandler's channel gating matrix (see
-[`docs/agents/07-vhandler.md`](../../../docs/agents/07-vhandler.md#channel-gating-matrix))
+[`shifty-vhandler/docs/architecture.md`](../../shifty-vhandler/docs/architecture.md#channel-gating-matrix))
 MUST wait for this event before sending their request. The
 vhandler applies the broadcast as a defense-in-depth gate only
 on the console port (9001) and on its own event emission; the
@@ -130,7 +130,7 @@ Structured log event from inside the guest.
 
 See also:
 - [04-error-codes.md](../04-error-codes.md) for the error code registry used by `EVENT_ERROR`.
-- [Channel gating matrix](../../../docs/agents/07-vhandler.md#channel-gating-matrix)
-  in `docs/agents/07-vhandler.md` for which vsock ports are
+- [Channel gating matrix](../../shifty-vhandler/docs/architecture.md#channel-gating-matrix)
+  in `shifty-vhandler/docs/architecture.md` for which vsock ports are
   gated by the init broadcast and which require consumer-side
   enforcement.

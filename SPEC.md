@@ -195,4 +195,4 @@ mvcp/
 
 See also:
 - [CHANGELOG.md](CHANGELOG.md) for version history.
-- [../docs/agents/05-mvcp-protocol.md](../docs/agents/05-mvcp-protocol.md) for Shifty-specific integration notes.
+- [docs/mvcp-integration.md](../docs/mvcp-integration.md) for Shifty-specific integration notes.

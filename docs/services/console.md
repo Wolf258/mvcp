@@ -318,4 +318,4 @@ See also:
 - [01-transport.md](../01-transport.md) for the shared transport frame and vsock dial flow.
 - [02-wire-format.md](../02-wire-format.md) for MVCP's frame layout and shared encoding primitives.
 - [../SPEC.md](../SPEC.md) for the protocol hub and service port table.
-- [07-vhandler.md](../../../docs/agents/07-vhandler.md) for the guest-side VPP service implementation.
+- [shifty-vhandler/docs/architecture.md](../../shifty-vhandler/docs/architecture.md) for the guest-side VPP service implementation.
