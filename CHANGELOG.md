@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Documentation — removed WANT_ACK / MVCP_ACK references
+
+- **WANT_ACK + MVCP_ACK removed from the spec**: Already replaced by
+  `STARTED` (0xFA) in the design decisions. All docs now consistently
+  reflect this: `02-wire-format.md`, `services/rpc.md`,
+  `services/events.md`, `services/file-transfer.md`, and
+  `examples/file-export.md`.
+- **Flag collision clarified**: `FlagExecStreaming = 0x04` was `WANT_ACK`
+  in early drafts. The code comment now documents this history.
+- **Known gaps documented**: Test coverage (~15%), empty SDK stubs,
+  empty `examples/` directory, unimplemented VM Commands service.
+
 ### Status Service — port 9003 becomes bidirectional
 
 - **Port 9003 renamed**: Heartbeat → Status. The port now carries both periodic

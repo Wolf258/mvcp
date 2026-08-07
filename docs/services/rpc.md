@@ -60,32 +60,36 @@ well-defined semantics for each message role:
 | Role             | `type`            | `flags`                              | `msg_id`                 |
 |------------------|-------------------|--------------------------------------|--------------------------|
 | **Request**      | service type      | `0x00`                               | non-zero, unique per conn |
-| **Request + ack**| service type      | `WANT_ACK` (`0x04`)                 | non-zero, unique per conn |
 | **Response**     | result type       | `IS_RESPONSE` (`0x01`)              | matches request          |
 | **Stream chunk** | chunk type        | `IS_STREAM_MORE` (`0x02`)           | matches request          |
 | **Stream end**   | result type       | `IS_RESPONSE` (`0x01`)             | matches request          |
+| **Started**      | `0xFA`            | `IS_RESPONSE` (`0x01`)             | matches request          |
 | **Error**        | `0xFE`            | `IS_RESPONSE` (`0x01`)             | matches request          |
 | **One-way**      | event type        | `0x00`                               | `0`                      |
 
-### Dispatch Acknowledgment (WANT_ACK)
+### Dispatch Acknowledgment (STARTED)
 
-Long-running operations (EXEC, TOOL_CALL) may set `WANT_ACK` on the
-request. The server responds with `MVCP_ACK` (type `0xFB`) immediately
-after dispatching the request to its handler:
+Long-running operations (EXEC, TOOL_CALL) may receive a `STARTED` (type
+`0xFA`) response from the server after it accepts and begins processing
+the request:
 
 ```
-Host → EXEC(msg_id=1, WANT_ACK, "long_build.sh") → Guest
-Guest → MVCP_ACK(msg_id=1, ok)                   → Host   ← "received, building..."
+Host → EXEC(msg_id=1, "long_build.sh")           → Guest
+Guest → STARTED(msg_id=1, IS_RESPONSE, stream)   → Host   ← "accepted, processing..."
 Guest → EXEC_STDOUT(msg_id=1, MORE)              → Host   ← streaming output
 Guest → EXEC_RESULT(msg_id=1, IS_RESPONSE)       → Host   ← "done, exit=0"
 ```
 
-The `MVCP_ACK` confirms dispatch, not completion. The actual result
-arrives later via the normal response path. If the server cannot
-dispatch (no handler, resource exhausted), `MVCP_ACK` carries a
-non-zero status and no further response frames are sent.
+`STARTED` confirms the handler has **begun processing** the request
+(process spawned, tool invoked, file opened), not merely dispatched it.
+The `STARTED` body is a single `bool` (`EncodeStarted`) indicating
+whether the response will be streamed (multiple chunks with
+`IS_STREAM_MORE`) or buffered (single response frame).
 
-Fast RPC calls (PING, GET_STATUS) typically omit `WANT_ACK` — the
+If the server cannot start processing (no handler, resource exhausted),
+it sends `ERROR` (`0xFE`) instead of `STARTED`.
+
+Fast RPC calls (PING, GET_STATUS) typically omit `STARTED` — the
 response arrives quickly enough that a separate dispatch ack adds
 unnecessary overhead.
 

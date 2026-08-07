@@ -157,7 +157,9 @@ The protocol is **port-agnostic**. These are conventions, not requirements.
 
 ## Status
 
-Specification complete, implementation pending.
+Specification and Go implementation complete. Integrated in `shifty-core` (host) and
+`shifty-vhandler` (guest). SDKs for Go, C, and Rust are planned.
+Missing: comprehensive round-trip tests for all message types.
 
 ## License
 

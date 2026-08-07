@@ -97,7 +97,7 @@ See [services/console.md](services/console.md) for the full VPP specification.
 |--------------|-------------------|----------------------------------------------------------------------------------------------------|
 | `0x01`       | `IS_RESPONSE`     | This frame is a response to a previous request (msg_id matches the request).                       |
 | `0x02`       | `IS_STREAM_MORE`  | More frames follow for this logical message.                                                       |
-| `0x04`       | `WANT_ACK`        | Sender expects an `MVCP_ACK` (type `0xFB`) frame with matching `msg_id` from the receiver.         |
+| `0x04`       | `FLAG_EXEC_STREAMING` | Request streaming output (EXEC). Was `WANT_ACK` in early drafts — removed in favour of `STARTED` (0xFA). |
 | `0x08`–`0x80`| *(reserved)*      | Must be 0.                                                                                         |
 
 Frames with `IS_STREAM_MORE` set are part of a logical message split
@@ -107,86 +107,29 @@ constant across all frames of a single logical message.
 An error is signaled by `IS_RESPONSE` + `type=0xFE` — no separate error
 flag is needed.
 
-## Application-Level Acknowledgment (WANT_ACK)
+## Dispatch Acknowledgment (STARTED)
 
-The vsock `SOCK_STREAM` guarantees transport-level reliability (ordered
-delivery, retransmission, no duplicates), but it does **not** confirm
-application-level processing. The `WANT_ACK` flag bridges this gap: the
-sender sets it when it needs the receiver to confirm that the message
-was received and dispatched.
+`WANT_ACK` and `MVCP_ACK` (type `0xFB`) were removed in the final
+protocol design. Their replacement is `STARTED` (type `0xFA`, see
+[services/rpc.md](services/rpc.md)): the server sends a `STARTED` frame
+to confirm it accepted the request for processing. Unlike the former
+`MVCP_ACK` which confirmed mere dispatch, `STARTED` confirms the handler
+has begun processing (process spawned, tool invoked, file opened).
 
-### MVCP_ACK (`0xFB`)
+- `STARTED` carries a single `bool stream` field (`EncodeStarted`).
+- The frame uses `IS_RESPONSE` with the matching `msg_id`.
+- If the handler cannot start, it sends `ERROR` (`0xFE`) instead.
 
-When a receiver processes a frame with `WANT_ACK` set, it MUST respond
-with an `MVCP_ACK` frame:
-
-```
-┌──────┬───────┬──────────┬──────────────┐
-│ type │ flags │ msg_id   │ body         │
-│ 0xFB │ 0x01  │ (match)  │ ack payload  │
-└──────┴───────┴──────────┴──────────────┘
-```
-
-| Field  | Value                                              |
-|--------|----------------------------------------------------|
-| `type` | `0xFB`                                             |
-| `flags`| `0x01` (`IS_RESPONSE`)                              |
-| `msg_id`| Matches the original message's `msg_id`            |
-| `body` | `uint8 status` + `string error_msg` (empty if ok)  |
-
-`status` values:
-
-| Status | Meaning                                                        |
-|--------|----------------------------------------------------------------|
-| `0x00` | OK — message received and dispatched to the handler.           |
-| `0x01` | Generic error — details in `error_msg`.                        |
-| `0x02` | Resource exhausted (ring buffer full, no memory).              |
-| `0x03` | Handler not registered — no handler exists for this type.      |
-
-### Semantics
-
-`MVCP_ACK` confirms **dispatch**, not **execution**:
-
-- For an `EXEC` command: `MVCP_ACK` means "command received, process
-  spawned" — the result (`EXEC_RESULT`) arrives later.
-- For an `EVENT_READY`: `MVCP_ACK` means "event queued/enqueued" — the
-  host has accepted the notification.
-- For `XFER_INIT`: `MVCP_ACK` means "ready to receive chunks."
-
-The ack is a fire-and-forget confirmation — the sender does **not** wait
-for the ack before sending subsequent messages (except in file transfer
-INIT, where the sender must wait before streaming chunks).
-
-### What Does Not Use WANT_ACK
-
-- **Streaming chunks** with `IS_STREAM_MORE` set — the final response
-  frame serves as the cumulative ack.
-- **Console (VPP)** — interactive terminal I/O on port 9001.
-- **Heartbeat** — periodic liveness signal on port 9003 (`msg_id=0`).
-- **Messages that already carry `IS_RESPONSE`** — the response is
-  implicitly the ack.
-
-### Wire Example
-
-**MVCP_ACK** (receiver → sender, 14 bytes on wire):
-
-```
- length: 0x00_00_00_0E   (14 = 6 header + 8 body)
-   type: 0xFB             (MVCP_ACK)
-  flags: 0x01             (IS_RESPONSE)
- msg_id: 0x00_00_00_01    (matches the acknowledged message)
-   body:
-    uint8 0x00             → OK
-    string ""              → empty (no error)
-```
+See [services/rpc.md](services/rpc.md) for the full `STARTED` life-cycle
+and [SPEC.md](../SPEC.md) for the design decision that removed
+`WANT_ACK`.
 
 ## msg_id Semantics (MVCP only)
 
 - **Request:** sender allocates a non-zero `msg_id`. Responses echo the
   same id with `IS_RESPONSE` set.
-- **One-way message with ack:** events (`0x80`–`0x8F`) and `XFER_INIT`
-  carry a non-zero `msg_id` with `WANT_ACK`. The receiver echoes the
-  `msg_id` in the `MVCP_ACK` response.
+- **One-way message:** events (`0x80`–`0x8F`) use `msg_id = 0` (fire-and-forget).
+  XFER_INIT uses a non-zero `msg_id` for correlation with XFER_DONE.
 - **One-way message without ack:** heartbeat uses `msg_id = 0`.
 - **Streaming:** all chunks of a message share the same `msg_id`.
   The first frame carries the request type; subsequent frames carry the

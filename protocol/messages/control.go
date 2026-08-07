@@ -44,9 +44,7 @@ func init() {
 	protocol.RegisterMessage(protocol.TypeSHUTDOWNACK, func(r io.Reader) (protocol.Message, error) {
 		return &ShutdownAckMsg{}, nil
 	})
-}
 
-func init() {
 	protocol.RegisterMessage(protocol.TypeSTARTED, func(r io.Reader) (protocol.Message, error) {
 		stream, err := protocol.ReadBool(r)
 		if err != nil {

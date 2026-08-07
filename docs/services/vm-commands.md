@@ -1,10 +1,14 @@
 # VM Commands Service
 
-> Planned — not yet implemented. Expected range `0x40`–`0x4F`. Carried
-> on port 9000 (Control).
+> **Planned — not yet implemented.** Reserved range `0x40`–`0x4F`.
+> Carried on port 9000 (Control port).
+>
+> Status: no message types defined, no wire format specified, no
+> implementation. This is a placeholder for future VM lifecycle
+> operations.
 
 Reserved for VM-specific control operations beyond the generic
-execution and filesystem primitives.
+execution and tools primitives.
 
 ## Planned Operations
 
@@ -31,5 +35,6 @@ lifecycle and guest environment, such as:
 ---
 
 See also:
-- [control.md](control.md) for generic control-plane messages (PING, SHUTDOWN, STATUS).
+- [control.md](control.md) for generic control-plane messages (PING, SHUTDOWN).
 - [execution.md](execution.md) for user-command execution inside the VM.
+- [status.md](status.md) for VM status queries (GET_STATUS, STATUS) on port 9003.

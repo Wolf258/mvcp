@@ -1,48 +1,41 @@
 # Events Service (Port 9002)
 
-> Message type range `0x80`–`0x8F`. G→H with application-level ACK.
+> Message type range `0x80`–`0x8F`. G→H, fire-and-forget.
 
 Port 9002 carries asynchronous event notifications from guest to host.
-Every event carries `WANT_ACK` (`0x04`) and a non-zero `msg_id`. The
-host MUST respond with an `MVCP_ACK` (type `0xFB`) after dispatching
-the event to its handler.
+Events are one-way (`msg_id = 0`): the guest pushes them and the host
+reads and dispatches to subscribers. No per-event acknowledgment is
+required — the host is expected to keep the events connection drained.
 
 ## Message Types
 
 | Type | Name | Flags | Payload |
 |------|------|-------|---------|
-| `0x80` | `EVENT_READY` | `WANT_ACK` | `string version` |
-| `0x81` | `EVENT_FILE_RECEIVED` | `WANT_ACK` | `string path`, `uint64 size` |
-| `0x82` | `EVENT_MOUNT` | `WANT_ACK` | `string path`, `string fstype` |
-| `0x83` | `EVENT_ERROR` | `WANT_ACK` | `uint16 code`, `string message` |
-| `0x84` | `EVENT_LOG` | `WANT_ACK` | `uint8 level`, `string message`, `uint64 ts_ns` |
-| `0x86` | `EVENT_INIT_FAILED` | `WANT_ACK` | `string version`, `string reason` |
+| `0x80` | `EVENT_READY` | `0x00` | `string version` |
+| `0x81` | `EVENT_FILE_RECEIVED` | `0x00` | `string path`, `uint64 size` |
+| `0x82` | `EVENT_MOUNT` | `0x00` | `string path`, `string fstype` |
+| `0x83` | `EVENT_ERROR` | `0x00` | `uint16 code`, `string message` |
+| `0x84` | `EVENT_LOG` | `0x00` | `uint8 level`, `string message`, `uint64 ts_ns` |
+| `0x86` | `EVENT_INIT_FAILED` | `0x00` | `string version`, `string reason` |
 | `0x85`, `0x87`–`0x8F` | *(reserved)* | — | — |
 
-## Acknowledgment Flow
+## Delivery Model
 
-Every event is acknowledged by the host. The guest allocates a monotonic
-`msg_id` per connection and sets `WANT_ACK`:
-
-```
-Guest → EVENT_READY (msg_id=1, WANT_ACK, version)   → Host
-Host  → MVCP_ACK   (msg_id=1, IS_RESPONSE, ok)      → Guest
-
-Guest → EVENT_LOG  (msg_id=2, WANT_ACK, level, msg)  → Host
-Host  → MVCP_ACK   (msg_id=2, IS_RESPONSE, ok)      → Guest
-```
-
-If the host cannot process the event (ring buffer full, no handler),
-it sends `MVCP_ACK` with a non-zero status:
+Events are fire-and-forget from the guest side: the guest pushes each
+event as a single `msg_id=0` frame and does not wait for acknowledgment.
+The host is expected to drain the events connection promptly. If the
+host's event ring buffer fills up, the guest logs the lost event and
+continues.
 
 ```
-Guest → EVENT_READY (msg_id=1, WANT_ACK)             → Host
-Host  → MVCP_ACK   (msg_id=1, status=0x02, "ring buffer full") → Guest
+Guest → EVENT_READY (msg_id=0, version)   → Host  (fire-and-forget)
+Guest → EVENT_LOG    (msg_id=0, level, msg) → Host
+Guest → EVENT_ERROR  (msg_id=0, code, message) → Host
 ```
 
-The guest SHOULD implement a timeout when waiting for `MVCP_ACK`. If
-the host does not acknowledge within the timeout, the guest treats
-the event as undelivered and may retry or drop the event.
+> Earlier drafts of the spec used `WANT_ACK` + `MVCP_ACK` for event
+> acknowledgment. That was removed in favour of a simpler fire-and-forget
+> model. See [SPEC.md](../SPEC.md) for the design decision.
 
 ## EVENT_READY (`0x80`)
 

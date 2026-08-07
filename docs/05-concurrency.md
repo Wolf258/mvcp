@@ -35,10 +35,10 @@ head-of-line blocking.
 
 ## One-Way Messages
 
-Ports 9002 (events), 9003 (heartbeat), and 9004 (file transfer) use
-MVCP directly without the RPC layer. Events and `XFER_INIT` carry
-`WANT_ACK` (`0x04`) — the receiver responds with `MVCP_ACK` (`0xFB`)
-to confirm dispatch. Heartbeat (`msg_id=0`) remains fire-and-forget
+Ports 9002 (events), 9003 (status), and 9004 (file transfer) use
+MVCP directly without the RPC layer. Events are fire-and-forget
+(`msg_id=0`). File transfer uses `STARTED` (`0xFA`) for handler
+confirmation. Heartbeat (`msg_id=0`) remains fire-and-forget
 with no ack.
 
 ## Connection Lifecycle

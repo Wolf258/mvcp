@@ -4,12 +4,12 @@ Export a 24KB file from guest to host in 16KB chunks. Host initiates.
 
 ## XFER_INIT (Host → Guest)
 
-Host requests the guest to export `/tmp/result.bin`. Sets `WANT_ACK`.
+Host requests the guest to export `/tmp/result.bin`.
 
 ```
  length: 0x00_00_00_1D   (29 = 6 + 23 payload)
    type: 0x20             (XFER_INIT)
-  flags: 0x04             (WANT_ACK)
+  flags: 0x00
  msg_id: 0x00_00_00_01
  payload:
    string "/tmp/result.bin" → 0x0010 "/tmp/result.bin"
@@ -17,18 +17,17 @@ Host requests the guest to export `/tmp/result.bin`. Sets `WANT_ACK`.
    uint8  0x01             → 0x01             (dir=export)
 ```
 
-## MVCP_ACK (Guest → Host)
+## STARTED (Guest → Host)
 
-Guest confirms readiness before sending chunks.
+Guest confirms it accepted the export request before sending chunks.
 
 ```
- length: 0x00_00_00_0E   (14 = 6 + 8 body)
-   type: 0xFB             (MVCP_ACK)
+ length: 0x00_00_00_07   (7 = 6 + 1 body)
+   type: 0xFA             (STARTED)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_01    (matches INIT)
    body:
-    uint8 0x00             → OK
-    string ""              → empty
+    bool false            → 0x00 (not a streaming response)
 ```
 
 ## Chunk 0 (Guest → Host)
@@ -80,14 +79,6 @@ func receiveExport(conn net.Conn, outPath string) error {
     _, _ = mvcp.ReadUint32(frame.Body)  // totalSize (unknown for export)
     _, _ = mvcp.ReadUint8(frame.Body)   // dir
 
-    // respond with MVCP_ACK to confirm readiness
-    ackBody := mvcp.EncodeAck(mvcp.AckOK, "")
-    ackFrame := mvcp.Frame{
-        Type: mvcp.TypeAck, Flags: mvcp.FlagResponse,
-        MsgID: frame.MsgID, Body: ackBody,
-    }
-    mvcp.WriteFrame(conn, ackFrame)
-
     out, err := os.Create(outPath)
     if err != nil {
         return err
@@ -132,7 +123,6 @@ func receiveExport(conn net.Conn, outPath string) error {
 
 ```go
 func sendExport(conn net.Conn, filePath string) error {
-    // wait for XFER_INIT (host → guest)
     initFrame, err := mvcp.ReadFrame(conn)
     if err != nil {
         return err
@@ -143,24 +133,20 @@ func sendExport(conn net.Conn, filePath string) error {
 
     f, err := os.Open(filePath)
     if err != nil {
-        // send MVCP_ACK with error
-        ackBody := mvcp.EncodeAck(mvcp.AckGenericError, err.Error())
-        ackFrame := mvcp.Frame{
-            Type: mvcp.TypeAck, Flags: mvcp.FlagResponse,
-            MsgID: initFrame.MsgID, Body: ackBody,
-        }
-        mvcp.WriteFrame(conn, ackFrame)
+        // send STARTED with error indication then close
+        mvcp.WriteFrame(conn, mvcp.Frame{
+            Type: mvcp.TypeError, Flags: mvcp.FlagResponse,
+            MsgID: initFrame.MsgID, Body: nil,
+        })
         return err
     }
     defer f.Close()
 
-    // send MVCP_ACK — ready
-    ackBody := mvcp.EncodeAck(mvcp.AckOK, "")
-    ackFrame := mvcp.Frame{
-        Type: mvcp.TypeAck, Flags: mvcp.FlagResponse,
-        MsgID: initFrame.MsgID, Body: ackBody,
-    }
-    mvcp.WriteFrame(conn, ackFrame)
+    // send STARTED — handler accepted the export
+    mvcp.WriteFrame(conn, mvcp.Frame{
+        Type: mvcp.TypeStarted, Flags: mvcp.FlagResponse,
+        MsgID: initFrame.MsgID, Body: mvcp.EncodeStarted(false),
+    })
 
     buf := make([]byte, 16*1024)
     seq := uint32(0)

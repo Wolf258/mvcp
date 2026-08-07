@@ -16,10 +16,9 @@ and uses a clean sender-push model with a single ack from the receiver.
   handles ordering and integrity.
 - **No cryptographic verification** — simple and fast. Integrity is
   handled at the transport layer.
-- **Three-phase transfer** — INIT (acknowledged) → CHUNKS (stream) →
-  DONE (verification). The `XFER_INIT` carries `WANT_ACK` so the
-  receiver confirms readiness. `XFER_DONE` carries verification fields
-  so the sender can confirm what was actually received.
+- **Three-phase transfer** — INIT → STARTED (guest confirms handler is ready) →
+  CHUNKS (stream) → DONE (verification). `XFER_DONE` carries verification
+  fields so the sender can confirm what was actually received.
 
 ## Service Architecture
 
@@ -41,16 +40,16 @@ head-of-line block control or execution messages.
 
 | Type | Name | Flags | Direction | Payload |
 |------|------|-------|-----------|---------|
-| `0x20` | `XFER_INIT` | `WANT_ACK` | H→G | `string path`, `uint32 total_size`, `uint8 dir` |
+| `0x20` | `XFER_INIT` | `0x00` | H→G | `string path`, `uint32 total_size`, `uint8 dir` |
 | `0x21` | `XFER_CHUNK` | — | H↔G | `uint32 seq`, `bytes data` |
 | `0x22` | `XFER_DONE` | `IS_RESPONSE` | receiver→sender | `bool ok`, `uint32 chunks_received`, `uint64 bytes_written` |
 | `0x23`–`0x2F` | *(reserved)* | — | — | — |
 
 ### XFER_INIT (`0x20`)
 
-Sent by the host to initiate a transfer. Carries `WANT_ACK` — the
-receiver MUST respond with `MVCP_ACK` (type `0xFB`) before the sender
-begins streaming chunks. The `msg_id` is non-zero for ack correlation.
+Sent by the host to initiate a transfer. The receiver sends `STARTED`
+(type `0xFA`) to confirm readiness before the sender begins streaming
+chunks. The `msg_id` is non-zero for correlation with `XFER_DONE`.
 
 | Field | Encoding | Description |
 |-------|----------|-------------|
@@ -58,7 +57,7 @@ begins streaming chunks. The `msg_id` is non-zero for ack correlation.
 | `total_size` | `uint32` | Total file size in bytes. `0` if unknown (export case — guest knows). |
 | `dir` | `uint8` | `0x00` = **import** (host → guest), `0x01` = **export** (guest → host) |
 
-Frame flags: `0x04` (`WANT_ACK`).
+Frame flags: `0x00`.
 
 ### XFER_CHUNK (`0x21`)
 
@@ -101,8 +100,8 @@ to detect mismatches.
 The host sends a file to the guest.
 
 ```
-Host  →   INIT(path="/tmp/script.sh", size=2048, dir=0x00)     [flags=0x04] WANT_ACK, msg_id=1
-Guest →   ACK(msg_id=1, status=0x00)                            [flags=0x01] MVCP_ACK — ready
+Host  →   INIT(path="/tmp/script.sh", size=2048, dir=0x00)     [flags=0x00] msg_id=1
+Guest →   STARTED(msg_id=1, stream=false)                       [flags=0x01] ready
 
 Host  →   CHUNK(seq=0, data=<1024B>)                            [flags=0x02] MORE
 Host  →   CHUNK(seq=1, data=<1024B>)                            [flags=0x00] ← last
@@ -115,8 +114,8 @@ Guest →   DONE(ok=true, chunks=2, bytes=2048)                   [flags=0x01] v
 The host requests a file from the guest. Guest pushes data back.
 
 ```
-Host  →   INIT(path="/app/result.json", size=0, dir=0x01)      [flags=0x04] WANT_ACK, msg_id=1
-Guest →   ACK(msg_id=1, status=0x00)                            [flags=0x01] MVCP_ACK — ready
+Host  →   INIT(path="/app/result.json", size=0, dir=0x01)      [flags=0x00] msg_id=1
+Guest →   STARTED(msg_id=1, stream=false)                       [flags=0x01] ready
 
 Guest →   CHUNK(seq=0, data=<16KB>)                             [flags=0x02] MORE
 Guest →   CHUNK(seq=1, data=<8KB>)                              [flags=0x00] ← last
@@ -127,7 +126,7 @@ Host  →   DONE(ok=true, chunks=2, bytes=24576)                  [flags=0x01] v
 ### Export — File Not Found
 
 ```
-Host  →   INIT(path="/nonexistent", dir=0x01)                   [flags=0x04] WANT_ACK, msg_id=1
+Host  →   INIT(path="/nonexistent", dir=0x01)                   [flags=0x00] msg_id=1
 Guest →   DONE(ok=false, chunks=0, bytes=0)                     [flags=0x01]
 ```
 
@@ -142,25 +141,25 @@ No error frames are sent mid-stream — tearing down the connection is the
 error signal.
 
 If the receiver rejects the `XFER_INIT` (permission denied, disk full),
-it responds with `MVCP_ACK` with a non-zero status. No chunks are sent.
+it responds with `ERROR` (`0xFE`) instead of `STARTED`. No chunks are sent.
 
 ## Flags Summary
 
 | Frame | Flags | Meaning |
 |-------|-------|---------|
-| `XFER_INIT` | `0x04` | `WANT_ACK` — receiver must respond with `MVCP_ACK` |
+| `XFER_INIT` | `0x00` | No flags — receiver may respond with `STARTED` or `ERROR` |
 | `XFER_CHUNK` (more) | `0x02` | `IS_STREAM_MORE` — more chunks follow |
 | `XFER_CHUNK` (last) | `0x00` | End of data stream |
 | `XFER_DONE` | `0x01` | `IS_RESPONSE` — transfer result + verification |
 
 ## Wire Example (Export, 24KB file, 16KB chunk)
 
-**XFER_INIT** (host → guest, `WANT_ACK`, msg_id=1):
+**XFER_INIT** (host → guest, msg_id=1):
 
 ```
  length: 0x00_00_00_1D   (29 = 6 + 23 payload)
    type: 0x20             (XFER_INIT)
-  flags: 0x04             (WANT_ACK)
+  flags: 0x00
  msg_id: 0x00_00_00_01
  payload:
    string "/tmp/result.bin" → 0x0010 "/tmp/result.bin"
@@ -168,16 +167,15 @@ it responds with `MVCP_ACK` with a non-zero status. No chunks are sent.
    uint8  0x01             → 0x01             (dir=export)
 ```
 
-**MVCP_ACK** (guest → host, confirms readiness):
+**STARTED** (guest → host, confirms readiness):
 
 ```
- length: 0x00_00_00_0E   (14 = 6 + 8 body)
-   type: 0xFB             (MVCP_ACK)
+ length: 0x00_00_00_07   (7 = 6 + 1 body)
+   type: 0xFA             (STARTED)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_01    (matches INIT)
- payload:
-   uint8 0x00             → OK
-   string ""              → empty
+   body:
+    bool false            → 0x00 (not streaming)
 ```
 
 **Chunk 0** (guest → host):
@@ -219,21 +217,10 @@ it responds with `MVCP_ACK` with a non-zero status. No chunks are sent.
 
 ```go
 func receiveExport(conn net.Conn, outPath string) error {
-    // read XFER_INIT
     frame, _ := mvcp.ReadMVCPFrame(conn)
     path, _ := mvcp.ReadString(frame.Body)
     totalSize, _ := mvcp.ReadUint32(frame.Body)
     dir, _ := mvcp.ReadUint8(frame.Body)
-
-    // respond with MVCP_ACK to confirm readiness
-    ackBody := mvcp.EncodeAck(mvcp.AckOK, "")
-    ackFrame := mvcp.Frame{
-        Type:   mvcp.TypeAck,
-        Flags:  mvcp.FlagResponse,
-        MsgID:  frame.MsgID,
-        Body:   ackBody,
-    }
-    mvcp.WriteMVCPFrame(conn, ackFrame)
 
     out, err := os.Create(outPath)
     if err != nil {
@@ -244,7 +231,6 @@ func receiveExport(conn net.Conn, outPath string) error {
     var chunksReceived uint32
     var bytesWritten uint64
 
-    // read chunks
     for {
         frame, _ := mvcp.ReadMVCPFrame(conn)
         buf := bytes.NewReader(frame.Body)
@@ -254,19 +240,18 @@ func receiveExport(conn net.Conn, outPath string) error {
         chunksReceived++
         bytesWritten += uint64(n)
         if frame.Flags&mvcp.FlagStreamMore == 0 {
-            break // last chunk
+            break
         }
     }
 
-    // send XFER_DONE with verification
     body := new(bytes.Buffer)
-    mvcp.WriteBool(body, true)     // ok
+    mvcp.WriteBool(body, true)
     mvcp.WriteUint32(body, chunksReceived)
     mvcp.WriteUint64(body, bytesWritten)
     doneFrame := mvcp.Frame{
         Type:   mvcp.TypeXferDone,
         Flags:  mvcp.FlagResponse,
-        MsgID:  1, // matches XFER_INIT
+        MsgID:  1,
         Body:   body.Bytes(),
     }
     mvcp.WriteMVCPFrame(conn, doneFrame)
@@ -282,9 +267,9 @@ func receiveExport(conn net.Conn, outPath string) error {
 | Overhead per chunk | Full JSON parse | 6B header + 4B seq |
 | Base64 bloat | +33% | 0% |
 | Connection | Shares RPC port 9000 | Dedicated port 9004 |
-| Init ack | None (fire-and-forget) | `MVCP_ACK` via `WANT_ACK` |
+| Init ack | None (fire-and-forget) | `STARTED` from guest |
 | Completion verification | JSON error objects | `XFER_DONE` with chunk count + byte count |
-| Error signaling | JSON error objects | Connection close or `MVCP_ACK` with error status |
+| Error signaling | JSON error objects | Connection close or `ERROR` (`0xFE`) |
 
 ---
 

@@ -125,7 +125,7 @@ requirements. Any service can run on any port.
 | Handshake: magic + version, fire-and-forget from guest         | No round-trip needed; host validates and proceeds or closes.                                                 |
 | MVCP handshake: "MVCP" (4B), VPP handshake: "VPP" (3B)        | Self-describing — the magic tells the host which protocol to speak on this connection.                        |
 | `IS_ERROR` flag removed                                        | Error is signaled by `IS_RESPONSE` + `type=0xFE` — the type already indicates error.                         |
-| `WANT_ACK` flag removed — replaced by `STARTED` (0xFA) | `STARTED` confirms the handler accepted the request for processing (not just dispatch). Sent after validation and process/tool start. |
+| `WANT_ACK` flag removed — replaced by `STARTED` (0xFA) | `STARTED` confirms the handler accepted the request for processing (not just dispatch). Sent after validation and process/tool start. The flag bit `0x04` was repurposed as `FLAG_EXEC_STREAMING`. |
 | Events are fire-and-forget from guest                              | Guest pushes events; host reads and dispatches to subscribers. Events no longer carry `msg_id`.                           |
 | File transfer: dedicated data plane (port 9004), separate from control plane (port 9000) | Large-file streaming should not compete with command/response traffic. Port 9004 has exclusive bandwidth for chunks. |
 | Heartbeat: binary, 20B fixed header + TLV extensions | `boot_id` (uint64), `seq` (uint64), `state` (uint8), `flags` (uint8), `payload_length` (uint16) + optional TLV extensions. Future-proof — parsers skip unknown extension types. |
@@ -173,23 +173,23 @@ mvcp/
 
 ## Adoption Guide (Shifty)
 
-| Step | What                                                            | Where                    |
-|------|-----------------------------------------------------------------|--------------------------|
-| 1    | Implement `mvcp/protocol/{frame,encode,decode,conn}.go`        | `mvcp/protocol/`         |
-| 2    | Implement `mvcp/protocol/{mvcp,message}.go` + `messages/`      | `mvcp/protocol/`         |
-| 3    | Implement `mvcp/protocol/rpc/{client,server,types}.go`         | `mvcp/protocol/rpc/`     |
-| 4    | Implement `mvcp/protocol/vpp/{vpp,types}.go`                   | `mvcp/protocol/vpp/`     |
-| 5    | Write round-trip tests for every message type                  | `mvcp/protocol/*_test.go`|
-| 6    | Remove `shared/vsock/frame.go` — use `mvcp/protocol/frame.go`  | `shared/`                |
-| 7    | Remove `vhandler/frame.go` — use `mvcp/protocol/frame.go`      | `shifty-vhandler/`       |
-| 8    | Replace `vhandler/rpc.go` JSON dispatcher with MVCP RPC server | `shifty-vhandler/`       |
-| 9    | Migrate `vhandler/console.go` raw bytes → VPP frames            | `shifty-vhandler/`       |
-| 10   | Migrate `vhandler/events.go` JSONL → MVCP frames                | `shifty-vhandler/`       |
-| 11   | Migrate `vhandler/heartbeat.go` → MVCP status service (port 9003, bidirectional) | `shifty-vhandler/`       |
-| 12   | Update `shared/vsock/rpc.go` → MVCP RPC client                  | `shared/`                |
-| 13   | Update `shared/vsock/events.go` → MVCP event reader             | `shared/`                |
-| 14   | Update `shiftyctl` to speak MVCP                                | `shifty-vhandler/shiftyctl/`|
-| 15   | Remove legacy JSON RPC types and dead code                      | All modules              |
+| Step | What                                                            | Where                    | Status |
+|------|-----------------------------------------------------------------|--------------------------|--------|
+| 1    | Implement `mvcp/protocol/{frame,encode,decode,conn}.go`        | `mvcp/protocol/`         | Done |
+| 2    | Implement `mvcp/protocol/{mvcp,message}.go` + `messages/`      | `mvcp/protocol/`         | Done |
+| 3    | Implement `mvcp/protocol/rpc/{client,server,types}.go`         | `mvcp/protocol/rpc/`     | Done |
+| 4    | Implement `mvcp/protocol/vpp/{vpp,types}.go`                   | `mvcp/protocol/vpp/`     | Done |
+| 5    | Write round-trip tests for every message type                  | `mvcp/protocol/*_test.go`| Partial (events + status only) |
+| 6    | Remove `shared/vsock/frame.go` — use `mvcp/protocol/frame.go`  | `shared/`                | Done |
+| 7    | Remove `vhandler/frame.go` — use `mvcp/protocol/frame.go`      | `shifty-vhandler/`       | Done |
+| 8    | Replace `vhandler/rpc.go` JSON dispatcher with MVCP RPC server | `shifty-vhandler/`       | Done |
+| 9    | Migrate `vhandler/console.go` raw bytes → VPP frames            | `shifty-vhandler/`       | Done |
+| 10   | Migrate `vhandler/events.go` JSONL → MVCP frames                | `shifty-vhandler/`       | Done |
+| 11   | Migrate `vhandler/heartbeat.go` → MVCP status service (port 9003, bidirectional) | `shifty-vhandler/`       | Done |
+| 12   | Update `shared/vsock/rpc.go` → MVCP RPC client                  | `shared/`                | Done |
+| 13   | Update `shared/vsock/events.go` → MVCP event reader             | `shared/`                | Done |
+| 14   | Update `shiftyctl` to speak MVCP                                | `shifty-vhandler/shiftyctl/` | Done |
+| 15   | Remove legacy JSON RPC types and dead code                      | All modules              | Done |
 
 ---
 
