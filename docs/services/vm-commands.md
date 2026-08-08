@@ -1,24 +1,33 @@
 # VM Commands Service
 
-> **Planned — not yet implemented.** Reserved range `0x40`–`0x4F`.
-> Carried on port 9000 (Control port).
->
-> Status: no message types defined, no wire format specified, no
-> implementation. This is a placeholder for future VM lifecycle
-> operations.
+> Range `0x40`–`0x4F`. Carried on port 9000 (Control port).
 
 Reserved for VM-specific control operations beyond the generic
 execution and tools primitives.
 
-## Planned Operations
+## SyncFilesystems
+
+`SYNC_FILESYSTEMS` is the first VM-control operation in this range. It lets
+the host request an in-guest filesystem flush before it pauses or stops
+Firecracker to capture an overlay, filesystem snapshot, or checkpoint.
+
+| Type | Name | Direction | Payload |
+|------|------|-----------|---------|
+| `0x40` | `SYNC_FILESYSTEMS` | H→G | none |
+| `0x41` | `SYNC_FILESYSTEMS_ACK` | G→H | none |
+
+The guest performs `sync(2)` across its mounted filesystems and sends the ACK
+only after that call returns. The request accepts no command, path, or other
+caller-controlled payload; it must not be implemented by executing a guest
+shell command.
+
+## Reserved Operations
 
 This range is reserved for commands that are specific to the VM
 lifecycle and guest environment, such as:
 
 | Tentative type | Name | Direction | Purpose |
 |----------------|------|-----------|---------|
-| `0x40` | — | H→G | Snapshot creation trigger |
-| `0x41` | — | H→G | Overlay reset / discard |
 | `0x42` | — | H→G | Network reconfiguration |
 | `0x43` | — | H→G | Resource limit adjustment |
 | `0x44`–`0x4F` | — | — | Reserved for future VM-specific ops |

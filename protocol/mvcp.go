@@ -33,6 +33,13 @@ const (
 	TypeLISTTOOLS       uint8 = 0x32
 	TypeLISTTOOLSRESULT uint8 = 0x33
 
+	// TypeSYNCFILESYSTEMS asks the guest to flush its mounted filesystems.
+	// It is intentionally a VM-control operation rather than an EXEC request:
+	// the host never needs to run an arbitrary guest shell command before
+	// capturing an overlay or creating a snapshot.
+	TypeSYNCFILESYSTEMS    uint8 = 0x40
+	TypeSYNCFILESYSTEMSACK uint8 = 0x41
+
 	TypeEVENTREADY        uint8 = 0x80
 	TypeEVENTFILERECEIVED uint8 = 0x81
 	TypeEVENTMOUNT        uint8 = 0x82

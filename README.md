@@ -63,7 +63,7 @@ mvcp/
 | [docs/services/file-transfer.md](docs/services/file-transfer.md) | File transfer: chunked export/import | MVCP |
 | [docs/services/filesystem.md](docs/services/filesystem.md) | *(Obsolete)* Superseded by Tools | MVCP |
 | [docs/services/tools.md](docs/services/tools.md) | Tools: generic TOOL_CALL, read_file/write_file/bash/glob/grep | MVCP |
-| [docs/services/vm-commands.md](docs/services/vm-commands.md) | *(Planned)* VM-specific operations | MVCP |
+| [docs/services/vm-commands.md](docs/services/vm-commands.md) | VM-specific operations (`SYNC_FILESYSTEMS`) | MVCP |
 
 ### Examples
 
