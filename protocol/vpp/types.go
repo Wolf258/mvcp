@@ -1,3 +1,5 @@
+// Package vpp implements the MVCP vsock proxy protocol (VPP) used for
+// console attach between the host and the guest vhandler.
 package vpp
 
 import (

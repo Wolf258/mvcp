@@ -1,3 +1,5 @@
+// Package protocol implements the MVCP binary wire protocol: framing,
+// message encoding/decoding, and message registration.
 package protocol
 
 import (

@@ -1,3 +1,5 @@
+// Package messages defines the MVCP wire message types and their
+// binary (de)serialization.
 package messages
 
 import (

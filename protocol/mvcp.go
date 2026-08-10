@@ -64,7 +64,7 @@ const (
 const (
 	FlagResponse      uint8 = 0x01
 	FlagStreamMore    uint8 = 0x02
-	FlagExecStreaming uint8 = 0x04 // was WANT_ACK in early drafts; removed in favour of STARTED (0xFA)
+	FlagExecStreaming uint8 = 0x04 // was WANT_ACK in early drafts; removed in favor of STARTED (0xFA)
 )
 
 // --- Error codes ---

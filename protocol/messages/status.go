@@ -64,11 +64,11 @@ const heartbeatHeaderSize = 20
 type HeartbeatFailureReason string
 
 const (
-	FailureReasonInitTimeout  HeartbeatFailureReason = "init_timeout"
-	FailureReasonInitPanic    HeartbeatFailureReason = "init_panic"
-	FailureReasonMountFailed  HeartbeatFailureReason = "mount_failed"
-	FailureReasonExecFailed   HeartbeatFailureReason = "exec_failed"
-	FailureReasonInternal     HeartbeatFailureReason = "internal"
+	FailureReasonInitTimeout HeartbeatFailureReason = "init_timeout"
+	FailureReasonInitPanic   HeartbeatFailureReason = "init_panic"
+	FailureReasonMountFailed HeartbeatFailureReason = "mount_failed"
+	FailureReasonExecFailed  HeartbeatFailureReason = "exec_failed"
+	FailureReasonInternal    HeartbeatFailureReason = "internal"
 )
 
 type HeartbeatExtension struct {

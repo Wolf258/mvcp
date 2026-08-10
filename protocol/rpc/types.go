@@ -1,3 +1,4 @@
+// Package rpc implements the MVCP request/response RPC layer.
 package rpc
 
 import (

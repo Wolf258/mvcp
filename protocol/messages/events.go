@@ -112,14 +112,14 @@ func (m *EventErrorMsg) UnmarshalBinary(data []byte) error {
 type EventLog struct {
 	Level   uint8
 	Message string
-	TsNs    uint64
+	TSNs    uint64
 }
 
 func (m *EventLog) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
 	protocol.WriteUint8(&buf, m.Level)
 	protocol.WriteString(&buf, m.Message)
-	protocol.WriteUint64(&buf, m.TsNs)
+	protocol.WriteUint64(&buf, m.TSNs)
 	return buf.Bytes(), nil
 }
 
@@ -139,7 +139,7 @@ func (m *EventLog) UnmarshalBinary(data []byte) error {
 	}
 	m.Level = lvl
 	m.Message = msg
-	m.TsNs = ts
+	m.TSNs = ts
 	return nil
 }
 
@@ -236,7 +236,7 @@ func init() {
 		if err != nil {
 			return nil, fmt.Errorf("event_log: %w", err)
 		}
-		return &EventLog{Level: lvl, Message: msg, TsNs: ts}, nil
+		return &EventLog{Level: lvl, Message: msg, TSNs: ts}, nil
 	})
 	protocol.RegisterMessage(protocol.TypeEVENTINITFAILED, func(r io.Reader) (protocol.Message, error) {
 		ver, err := protocol.ReadString(r)
