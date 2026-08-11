@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Handshake & capability negotiation
+
+- **HELLO handshake implemented**: replaces the fire-and-forget
+  magic+version exchange with a bidirectional HELLO frame (role,
+  software version, capability revision ranges). Normative design in
+  `docs/06-negotiation.md`.
+- **Capability negotiation**: deterministic intersection
+  (`Negotiate(A,B) == Negotiate(B,A)`), highest common revision wins,
+  unknown capability IDs ignored, baseline control/status messages are
+  not capabilities.
+- **Protocol API**: `Hello`/`NewHello`, `Negotiate`,
+  `Requirements.Check`, `ServerHandshake`/`ClientHandshake` with a 2s
+  handshake deadline (cleared after the exchange), and
+  `HandshakeError` for rejections. New codes `UNEXPECTED_ROLE`
+  (0x000B) and `NO_COMMON_CAPABILITY` (0x000C).
+- **Per-service requirements**: each MVCP port enforces its own
+  capability requirements after the handshake (shifty-core
+  `portRequirements`, vhandler `sessionReqs`); port 9003 has none.
+- **Guest-side handshake deadline**: the vhandler vsock fd now supports
+  a handshake deadline via `SO_RCVTIMEO`/`SO_SNDTIMEO` (EAGAIN
+  surfaces as `os.ErrDeadlineExceeded`); shiftyctl dials with
+  `ClientHandshake` (role CLI).
+- **Old API removed**: `WriteMVCPHandshake`/`ValidateMVCPHandshake`/
+  `ErrBadMVCPHandshake` replaced by the HELLO helpers and
+  `ErrBadMVCPMagic`/`ErrUnsupportedMVCPVersion`.
+
 ### Documentation — removed WANT_ACK / MVCP_ACK references
 
 - **WANT_ACK + MVCP_ACK removed from the spec**: Already replaced by

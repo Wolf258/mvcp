@@ -25,7 +25,7 @@ long as both sides agree.
 │ max 16 MB                                             │
 ├───────────────────────────────────────────────────────┤
 │ HANDSHAKE (per protocol)                              │
-│ MVCP: "MVCP"+0x01 (5B)  |  VPP: "VPP"+0x01 (4B)     │
+│ MVCP: "MVCP"+0x01 + HELLO | VPP: "VPP"+0x01 (4B)     │
 ├───────────────────────────────────────────────────────┤
 │ VSOCK TRANSPORT (Firecracker)                         │
 │ CONNECT <port>\n / OK <port>\n over AF_UNIX          │
@@ -112,24 +112,26 @@ The host connects to Firecracker's per-VM vsock Unix socket:
 1. Connect to `AF_UNIX` socket at `<jail>/root/vsock.sock`
 2. Send `CONNECT <port>\n`
 3. Receive `OK <assigned_port>\n`
-4. Read protocol handshake from guest (see below)
-5. Validate magic + version
-6. Proceed to `ReadFrame` / `WriteFrame` loop
+4. Read wire prefix + HELLO from guest (see below)
+5. Validate prefix (magic + wire version), decode HELLO, negotiate
+6. Reply with own prefix + HELLO — or `ERROR` and close
+7. Proceed to `ReadFrame` / `WriteFrame` loop
 
 ## Guest-Side Transport (Shifty)
 
 1. Open `AF_VSOCK` `SOCK_STREAM` listeners on ports 9000–9004
 2. `Accept()` connection
-3. Immediately write protocol handshake (see below)
+3. Immediately write wire prefix + HELLO (see below)
 4. Enter `ReadFrame` / dispatch loop
 
 ## Connection Handshake
 
-Every connection starts with a handshake sent by the guest immediately
-after accept. The magic string tells the host which protocol to speak on
-this connection.
+Every connection starts with a **wire prefix** sent by the guest agent
+(vhandler) immediately after accept, followed by a **HELLO frame** that
+negotiates identity and capabilities. The magic string tells the host
+which protocol to speak on this connection.
 
-### MVCP handshake (ports 9000, 9002, 9003, 9004 — 5 bytes)
+### MVCP handshake (ports 9000, 9002, 9003, 9004)
 
 ```
 ┌─────────────────┬─────────┐
@@ -141,7 +143,17 @@ this connection.
 | Field    | Size    | Value                                      |
 |----------|---------|--------------------------------------------|
 | `magic`  | 4 bytes | `0x4D 0x56 0x43 0x50` ("MVCP")             |
-| `version`| 1 byte  | Protocol version number. Currently `0x01`.  |
+| `version`| 1 byte  | Wire format version. Currently `0x01`.      |
+
+Immediately after the prefix, the guest agent sends a **HELLO frame**
+(`type=0x00`, `flags=0x00`, `msg_id=0`) announcing its role, software
+version and supported capability revision ranges. The host validates,
+negotiates, and replies with its own prefix + HELLO — or an `ERROR`
+frame followed by close.
+
+See [06-negotiation.md](06-negotiation.md) for the full handshake
+contract: HELLO layout, validation limits, capability table,
+negotiation algorithm, per-port requirements, and timeout.
 
 ### VPP handshake (port 9001 — 4 bytes)
 
@@ -159,14 +171,19 @@ this connection.
 | 2    | `0x50` | 'P'               |
 | 3    | `0x01` | Protocol version  |
 
-### Validation (host side)
+### Validation
 
-The host reads `len(magic)` bytes, validates magic and version:
+Two failure categories:
 
-- **Version supported** → proceeds to read transport frames
-- **Version not supported** → closes the connection
+- **Wire incompatibility** (bad magic, or wire version ≠ `0x01`):
+  close immediately, no `ERROR` frame — the peer may not be able to
+  parse it.
+- **Post-wire-acceptance failures** (unexpected role, malformed HELLO,
+  unsatisfied capability requirements): the detecting side sends an
+  `ERROR` frame with a specific code, then closes.
 
-Fire-and-forget. No response from host, no round-trip.
+The handshake is **no longer fire-and-forget**: both sides exchange
+HELLO and independently compute the negotiated capability set.
 
 ## Multiple Connections
 

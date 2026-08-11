@@ -283,14 +283,16 @@ mvcp/protocol/
   frame.go            # ReadFrame / WriteFrame — transport (4B BE) — shared by MVCP and VPP
   encode.go           # WriteUint16, WriteString, ... (shared)
   decode.go           # ReadUint16, ReadString, ... (shared)
-  conn.go             # WriteHandshake / ValidateHandshake
+  handshake.go        # MVCP handshake: "MVCP"+0x01 + HELLO exchange (ServerHandshake/ClientHandshake)
+  hello.go            # HELLO: roles, capabilities, strict Encode/Decode
+  capabilities.go     # Negotiate, per-port Requirements, HandshakeTimeout (2s)
+  conn.go             # VPP handshake only: "VPP"+0x01 (WriteVPPHandshake / ValidateVPPHandshake)
   mvcp.go             # MVCP type/flags/msg_id constants, ReadMVCPFrame/WriteMVCPFrame
   message.go          # Message interface + decode registry
-  messages/           # MVCP message structs (control, exec, file, fs, events, heartbeat, error)
+  messages/           # MVCP message structs (control, exec, file, events, status, tools, started, error)
   vpp/                # Virtual PTY Protocol (this spec)
     vpp.go            # ReadFrame / WriteFrame — uses transport ReadFrame + VPP type dispatch
-    types.go          # Type constants (DATA=0x00, WINCH=0x01, ...)
-    messages.go       # AttachMsg, SessionMsg, WinchMsg, DetachMsg + Encode/Decode
+    types.go          # Type constants (DATA=0x00, WINCH=0x01, ...) + AttachMsg, SessionMsg, WinchMsg, DetachMsg + Encode/Decode
 ```
 
 VPP's `ReadFrame`/`WriteFrame` call `protocol.ReadFrame`/`protocol.WriteFrame`

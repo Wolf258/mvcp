@@ -11,6 +11,11 @@ const frameHeaderSize = 6
 // --- Message types ---
 
 const (
+	// TypeHELLO is the first MVCP frame after the wire prefix. It
+	// announces role, software version and capability revision ranges;
+	// see docs/06-negotiation.md for the handshake contract.
+	TypeHELLO uint8 = 0x00
+
 	TypePING        uint8 = 0x01
 	TypePONG        uint8 = 0x02
 	TypeSHUTDOWN    uint8 = 0x03
@@ -80,6 +85,13 @@ const (
 	ErrorCodeBadVersion       uint16 = 0x0008
 	ErrorCodeUnknownTool      uint16 = 0x0009
 	ErrorCodeToolFailed       uint16 = 0x000A
+	// ErrorCodeUnexpectedRole rejects a HELLO whose peer role is not
+	// accepted by the endpoint (handshake, post-wire-acceptance).
+	ErrorCodeUnexpectedRole uint16 = 0x000B
+	// ErrorCodeNoCommonCapability rejects a HELLO when a required
+	// capability is missing or has no common revision (handshake,
+	// post-wire-acceptance).
+	ErrorCodeNoCommonCapability uint16 = 0x000C
 )
 
 // --- Heartbeat states (lifecycle) ---

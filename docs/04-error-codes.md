@@ -26,6 +26,12 @@ Direction: both host-to-guest and guest-to-host.
 | `0x0008` | `BAD_VERSION` | Protocol version not supported by the receiver |
 | `0x0009` | `UNKNOWN_TOOL` | Tool name not registered in the guest |
 | `0x000A` | `TOOL_FAILED` | Tool executed but returned an error (details in error_msg) |
+| `0x000B` | `UNEXPECTED_ROLE` | Handshake: peer role not accepted by this endpoint |
+| `0x000C` | `NO_COMMON_CAPABILITY` | Handshake: a required capability is missing or has no common revision (details in error_msg) |
+
+Handshake errors use `msg_id = 0` (echoing HELLO) and `IS_RESPONSE`.
+`BAD_VERSION` (0x0008) remains defined but unused: wire version
+mismatches close the connection without an ERROR frame.
 
 ## Wire Example
 

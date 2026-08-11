@@ -34,7 +34,7 @@ MVCP has four layers:
 │ ReadFrame / WriteFrame — length(4B BE) + payload          │
 ├───────────────────────────────────────────────────────────┤
 │ HANDSHAKE (per protocol)                                  │
-│ MVCP: "MVCP"+0x01 (5B)  |  VPP: "VPP"+0x01 (4B)         │
+│ MVCP: "MVCP"+0x01 + HELLO | VPP: "VPP"+0x01 (4B)         │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -62,15 +62,16 @@ requirements. Any service can run on any port.
 
 | Range         | Category     | Types                                                | Port          |
 |--------------|-------------|------------------------------------------------------|-------------- |
-| `0x00`–`0x0F` | Control      | PING, PONG, SHUTDOWN                                 | 9000          |
+| `0x00`        | Handshake    | HELLO                                                | all MVCP ports |
+| `0x00`–`0x0F` | Control      | PING, PONG, SHUTDOWN, SHUTDOWN_ACK                   | 9000          |
 | `0x05`–`0x07` | Status       | GET_STATUS, STATUS, HEARTBEAT                        | 9003          |
 | `0x10`–`0x1F` | Execution    | EXEC, EXEC_STREAM, EXEC_RESULT                  | 9000          |
 | `0x20`–`0x2F` | File Transfer| XFER_INIT, XFER_CHUNK, XFER_DONE                      | 9004          |
-| `0x30`–`0x3F` | Tools        | TOOL_CALL, TOOL_RESULT, LIST_TOOLS                    | 9000          |
+| `0x30`–`0x3F` | Tools        | TOOL_CALL, TOOL_RESULT, LIST_TOOLS, LIST_TOOLS_RESULT | 9000          |
 | `0x40` | VM Commands  | `SYNC_FILESYSTEMS`                                   | 9000          |
 | `0x41` | VM Commands  | `SYNC_FILESYSTEMS_ACK`                               | 9000          |
 | `0x42`–`0x4F` | VM Commands  | *(reserved)*                                  | —             |
-| `0x80`–`0x8F` | Events       | EVENT_READY, EVENT_LOG, EVENT_ERROR, …               | 9002          |
+| `0x80`–`0x8F` | Events       | EVENT_READY, EVENT_FILE_RECEIVED, EVENT_MOUNT, EVENT_ERROR, EVENT_LOG, EVENT_INIT_FAILED | 9002 |
 | `0xFA`        | STARTED      | STARTED                                            | 9000/9004     |
 | `0xFE`        | Error        | ERROR                                               | 9000/9004     |
 
@@ -85,6 +86,7 @@ requirements. Any service can run on any port.
 | [docs/03-versioning.md](docs/03-versioning.md)                 | Protocol versioning strategy, compatibility policy                                              |
 | [docs/04-error-codes.md](docs/04-error-codes.md)               | Error envelope (`0xFE`) and error code registry                                                |
 | [docs/05-concurrency.md](docs/05-concurrency.md)               | Pipelining, streaming, head-of-line blocking, multiple connections                             |
+| [docs/06-negotiation.md](docs/06-negotiation.md)               | Handshake: HELLO capability negotiation, per-port requirements, error semantics               |
 
 ### Services (by port / function)
 
@@ -107,7 +109,7 @@ requirements. Any service can run on any port.
 
 | Doc                                                            | Scenario                                                                                       |
 |----------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| [docs/examples/handshake.md](docs/examples/handshake.md)       | Connection handshake (MVCP 5B + VPP 4B)                                                        |
+| [docs/examples/handshake.md](docs/examples/handshake.md)       | Connection handshake (MVCP prefix+HELLO + VPP)                                                 |
 | [docs/examples/ping-pong.md](docs/examples/ping-pong.md)       | PING/PONG liveness check                                                                       |
 | [docs/examples/exec.md](docs/examples/exec.md)                 | EXEC command with result                                                                       |
 | [docs/examples/exec-streaming.md](docs/examples/exec-streaming.md)| EXEC with streaming stdout/stderr                                                           |
@@ -124,17 +126,17 @@ requirements. Any service can run on any port.
 | MVCP and VPP share transport but differ in inner header        | VPP's 1B type header suits interactive keystrokes; MVCP's 6B header (type+flags+msg_id) suits structured RPC. |
 | RPC layer on top of MVCP, not a separate wire format           | MVCP already provides `msg_id`, `IS_RESPONSE`, and `IS_STREAM_MORE`. RPC formalises how to use them.          |
 | `length` includes all post-length bytes                       | Enables single `make([]byte, length)` + single `ReadFull` for the entire transport payload.                  |
-| Handshake: magic + version, fire-and-forget from guest         | No round-trip needed; host validates and proceeds or closes.                                                 |
-| MVCP handshake: "MVCP" (4B), VPP handshake: "VPP" (3B)        | Self-describing — the magic tells the host which protocol to speak on this connection.                        |
+| Handshake: prefix + HELLO capability exchange                 | Peers announce identity and capability revision ranges; both compute the intersection; each service enforces per-port requirements. |
+| MVCP handshake: "MVCP"+0x01 (5B), VPP handshake: "VPP"+0x01 (4B) | Self-describing — magic + wire version tells the host which protocol to speak on this connection.               |
 | `IS_ERROR` flag removed                                        | Error is signaled by `IS_RESPONSE` + `type=0xFE` — the type already indicates error.                         |
 | `WANT_ACK` flag removed — replaced by `STARTED` (0xFA) | `STARTED` confirms the handler accepted the request for processing (not just dispatch). Sent after validation and process/tool start. The flag bit `0x04` was repurposed as `FLAG_EXEC_STREAMING`. |
 | Events are fire-and-forget from guest                              | Guest pushes events; host reads and dispatches to subscribers. Events no longer carry `msg_id`.                           |
 | File transfer: dedicated data plane (port 9004), separate from control plane (port 9000) | Large-file streaming should not compete with command/response traffic. Port 9004 has exclusive bandwidth for chunks. |
 | Heartbeat: binary, 20B fixed header + TLV extensions | `boot_id` (uint64), `seq` (uint64), `state` (uint8), `flags` (uint8), `payload_length` (uint16) + optional TLV extensions. Future-proof — parsers skip unknown extension types. |
-| Heartbeat interval: 1 second                                   | Fast enough for crash detection, slow enough to be negligible overhead (18 bytes/s).                           |
+| Heartbeat interval: 500 ms (Shifty)                            | Fast enough for crash detection, slow enough to be negligible overhead; a Shifty convention, not a protocol requirement. |
 | GET_STATUS tuned for monitoring                                | Separate from operational RPC (port 9000). Status queries don't contend with execution streams.                |
 | Strings: `uint16` length prefix                                | 64KB max covers all current use cases; file data uses `bytes` with `uint32` length.                           |
-| No per-frame version byte                                      | Version is per-connection (handshake). When the protocol evolves, the handshake version changes.              |
+| No per-frame version byte                                      | Wire version is per-connection in the handshake prefix; feature compatibility is negotiated via HELLO capabilities. |
 | Head-of-line blocking during streaming                         | Accepted tradeoff. Multiple connections provide concurrency when needed without frame-interleaving complexity. |
 | Port-agnostic design                                           | Any service can run on any port. Port numbers in these docs are Shifty conventions.                           |
 | VPP enforces 64 KB frame limit                                 | Reasonable maximum for interactive terminal data; transport allows 16 MB but VPP rejects larger frames.       |
@@ -149,7 +151,10 @@ mvcp/
     frame.go          # ReadFrame / WriteFrame (transport, 4B BE — shared by all ports)
     encode.go         # binary write primitives (shared by MVCP and VPP)
     decode.go         # binary read primitives (shared by MVCP and VPP)
-    conn.go           # WriteHandshake / ValidateHandshake (MVCP + VPP)
+    handshake.go      # MVCP handshake: wire prefix "MVCP"+0x01 + HELLO exchange (ServerHandshake/ClientHandshake)
+    hello.go          # HELLO message: roles, capabilities, strict Encode/Decode
+    capabilities.go   # capability negotiation (Negotiate), per-port Requirements, HandshakeTimeout (2s)
+    conn.go           # VPP handshake only: "VPP"+0x01 (WriteVPPHandshake / ValidateVPPHandshake)
     mvcp.go           # MVCP wire format: type/flags/msg_id constants, Frame struct, ReadMVCPFrame/WriteMVCPFrame
     message.go        # Message interface + decode registry
       messages/         # MVCP message structs + per-type Encode/Decode
@@ -158,6 +163,8 @@ mvcp/
         file.go
         events.go
         status.go          # HEARTBEAT (0x07) + GET_STATUS (0x05) + STATUS (0x06)
+        started.go         # STARTED (0xFA)
+        tools.go           # TOOL_CALL (0x30) / TOOL_RESULT (0x31) / LIST_TOOLS (0x32) / LIST_TOOLS_RESULT (0x33)
         error.go
     rpc/              # RPC layer (request/response abstraction on MVCP)
       client.go       # RPC Client: Call, Stream, pending map, msg_id allocation

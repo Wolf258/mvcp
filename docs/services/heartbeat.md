@@ -72,7 +72,7 @@ be added without breaking existing receivers.
 
 ## Interval
 
-The guest emits one `HEARTBEAT` frame every **1 second** (500ms in Shifty).
+The guest emits one `HEARTBEAT` frame every **500 ms** (Shifty implementation).
 
 ## Liveness Detection (Host Side)
 

@@ -102,6 +102,15 @@ func (c *Client) Close() error {
 	return c.conn.(io.Closer).Close()
 }
 
+// IsClosed reports whether the client has shut down — because the context
+// passed to Start was canceled, the connection failed, or Close was called.
+// A closed client rejects all future calls and must not be reused.
+func (c *Client) IsClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
 func (c *Client) allocMsgID() uint32 {
 	c.mu.Lock()
 	defer c.mu.Unlock()

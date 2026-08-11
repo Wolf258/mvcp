@@ -63,7 +63,7 @@ the guest responds with `STATUS` carrying `IS_RESPONSE` and the matching
 ### HEARTBEAT
 
 Periodic liveness pulse with VM state and extensible TLV extensions.
-Emitted G→H every **1 second** with `msg_id = 0x00000000` (one-way,
+Emitted G→H every **500 ms** (Shifty implementation) with `msg_id = 0x00000000` (one-way,
 no response expected). The host uses `time.Now()` at reception to
 measure "time since last beat."
 

@@ -9,7 +9,7 @@ over [Firecracker](https://firecracker-microvm.github.io/)'s vsock device.
 - **Compact encoding** — ~88% wire-size reduction vs JSON (for the EXEC case)
 - **Streaming** — native chunked transfer with `IS_STREAM_MORE` flag (file I/O, exec stdout/stderr)
 - **Pipelining** — 4-byte `msg_id` correlation token enables concurrent request/response
-- **Versioned** — connection-level handshake with magic + version byte
+- **Versioned + negotiated** — handshake prefix (magic + wire version) + HELLO capability negotiation per connection
 - **Extensible** — 256 message type space, reserved extension marker `0xFF`
 - **SDK-ready** — encoding/decoding primitives designed for straightforward C/Rust bindings
 - **Port-agnostic** — any service can run on any port; port numbers are conventions
@@ -50,6 +50,7 @@ mvcp/
 | [docs/03-versioning.md](docs/03-versioning.md) | Protocol versioning strategy, compatibility policy |
 | [docs/04-error-codes.md](docs/04-error-codes.md) | Error envelope (`0xFE`) and error code registry |
 | [docs/05-concurrency.md](docs/05-concurrency.md) | Pipelining, streaming, head-of-line blocking, multiple connections |
+| [docs/06-negotiation.md](docs/06-negotiation.md) | Handshake: HELLO capability negotiation, per-port requirements |
 
 ### Services
 
@@ -69,7 +70,7 @@ mvcp/
 
 | Doc | Scenario |
 |-----|----------|
-| [docs/examples/handshake.md](docs/examples/handshake.md) | Connection handshake (MVCP 5B + VPP 4B) |
+| [docs/examples/handshake.md](docs/examples/handshake.md) | Connection handshake (MVCP prefix+HELLO + VPP) |
 | [docs/examples/ping-pong.md](docs/examples/ping-pong.md) | PING/PONG liveness check |
 | [docs/examples/exec.md](docs/examples/exec.md) | EXEC command with result |
 | [docs/examples/exec-streaming.md](docs/examples/exec-streaming.md) | EXEC with streaming stdout/stderr |
