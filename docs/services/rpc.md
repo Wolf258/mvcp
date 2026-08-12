@@ -155,17 +155,19 @@ The client maintains a `map[uint32]*pendingCall` keyed by `msg_id`. Each
 incoming frame is dispatched to the matching pending call based on
 `msg_id` + `IS_RESPONSE`.
 
-## Streaming and Head-of-Line Blocking
+## Streaming and Multiplexing
 
-Once a streaming operation starts:
+A streaming operation does **not** block the connection:
 
-- **No other request can be sent** on the same connection until the stream
-  ends (last frame with `IS_STREAM_MORE` cleared).
-- This is an accepted tradeoff — avoiding frame-interleaving complexity.
-
-For concurrent operations while a stream is active, open **multiple
-connections** to port 9000. Each connection is an independent RPC stream
-with its own `msg_id` counter.
+- Requests and streams are multiplexed on one connection; the client
+  dispatches every frame to the pending call matching its `msg_id`.
+- Frames are self-delimiting, so streams interleave safely. Each frame
+  must be written atomically (single buffer) when multiple handlers
+  write concurrently.
+- Ordering is guaranteed **within** a stream (same `msg_id`; vsock is
+  ordered); there is no ordering guarantee across requests or streams.
+  Stream end is signaled by the frame with `IS_STREAM_MORE` cleared.
+- A slow stream consumer causes backpressure, never silent frame loss.
 
 ## Timeout Semantics
 
@@ -415,7 +417,8 @@ Host (Client)                         Guest (Server)
 | RPC is a Go abstraction, not a new wire format              | No protocol bloat. The MVCP wire layer already has `msg_id` + flags — we just define how to use them. |
 | msg_id is per-connection, monotonic starting at 1           | 32-bit range (~4B messages) is effectively infinite. Per-connection avoids cross-connection complexity. |
 | IS_RESPONSE + type=0xFE for errors, no separate error flag  | The type already indicates error; a dedicated flag would be redundant.                         |
-| Streaming blocks the connection (head-of-line)              | Acceptable tradeoff. Multiple connections provide concurrency when needed.                     |
+| Streaming is multiplexed on one connection                  | Frames are self-delimiting and correlated by `msg_id`; concurrent requests and streams coexist, each stream preserving its own ordering. |
+| Multiple connections remain supported                       | Independent `msg_id` counters and session isolation; not required for concurrency.                                                |
 | Timeouts via context.Context, not wire-level fields         | Clients already carry deadlines via contexts. No need to duplicate in the protocol.            |
 | No server-initiated requests on port 9000                   | Host is always the RPC caller. Guest notifications go through port 9002 (Events).              |
 | Pipelining: responses may arrive out of order               | The client uses a `map[msg_id]` — order doesn't matter. Simplifies server implementation.      |
@@ -424,9 +427,9 @@ Host (Client)                         Guest (Server)
 
 See also:
 - [02-wire-format.md](../02-wire-format.md) for the MVCP header layout and flags.
-- [05-concurrency.md](../05-concurrency.md) for the concurrency model and multiple connections.
+- [05-concurrency.md](../05-concurrency.md) for the concurrency model (pipelining, streaming multiplexing, multiple connections).
 - [04-error-codes.md](../04-error-codes.md) for the error code registry.
 - [control.md](control.md) for the Control service messages.
 - [execution.md](execution.md) for the Execution service messages.
 - [events.md](events.md) for the Events service (port 9002, no RPC).
-- [heartbeat.md](heartbeat.md) for the Heartbeat service (port 9003, no RPC).
+- [status.md](status.md) for the Status service (port 9003, no RPC).

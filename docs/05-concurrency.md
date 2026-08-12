@@ -15,23 +15,32 @@ MVCP supports pipelined request/response on a single connection via
 
 See [services/rpc.md](services/rpc.md) for the full pipelining contract.
 
-## Streaming and Head-of-Line Blocking
+## Streaming and Concurrency
 
-Once a streaming RPC call starts on port 9000 (exec stdout/stderr):
+A streaming RPC (exec stdout/stderr) does **not** block the connection.
+Requests and streams are multiplexed on a single connection:
 
-- **No other request can be sent** on the same connection until the
-  stream ends (last frame with `IS_STREAM_MORE` cleared).
-- This is an accepted tradeoff — avoiding frame-interleaving complexity.
-
-For concurrent operations while a stream is active, open **multiple
-connections** to port 9000.
+- Every frame is correlated by `msg_id`; an active stream and other
+  in-flight requests — including further streams — coexist on the same
+  connection.
+- Each frame is a complete, self-delimiting unit (length-prefixed), so
+  frames of different streams never merge. Implementations must write
+  each frame atomically when multiple handlers write concurrently.
+- Ordering is preserved **within** a stream: chunks of the same `msg_id`
+  arrive in the order written (vsock is ordered), and the last chunk
+  clears `IS_STREAM_MORE`. There is no ordering guarantee **across**
+  requests or streams — responses are correlated by `msg_id`, not by
+  position.
+- Stream consumers must drain promptly; a slow consumer causes
+  backpressure, never silent frame loss.
 
 ## Multiple Connections to Port 9000
 
-Multiple connections to port 9000 are allowed. Each connection is an
-independent RPC stream with its own `msg_id` counter. This enables
-concurrent EXEC calls from different host-side goroutines without
-head-of-line blocking.
+Multiple connections to port 9000 are allowed, each with its own `msg_id`
+counter. They are not required for concurrency — a single connection
+already multiplexes concurrent requests and streams — but they provide
+session isolation: each connection can be torn down or re-handshaken
+independently (e.g. one connection per agent conversation).
 
 ## One-Way Messages
 
@@ -55,5 +64,5 @@ with no ack.
 See also:
 - [01-transport.md](01-transport.md) for the vsock connection model and multiple-connection semantics.
 - [02-wire-format.md](02-wire-format.md) for `msg_id` semantics and `IS_STREAM_MORE` flag details.
-- [services/rpc.md](services/rpc.md) for the RPC layer concurrency contract (pipelining, head-of-line, timeouts).
+- [services/rpc.md](services/rpc.md) for the RPC layer concurrency contract (pipelining, streaming multiplexing, timeouts).
 - [services/execution.md](services/execution.md) for streaming EXEC semantics.

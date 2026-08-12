@@ -114,7 +114,7 @@ protocol design. Their replacement is `STARTED` (type `0xFA`, see
 [services/rpc.md](services/rpc.md)): the server sends a `STARTED` frame
 to confirm it accepted the request for processing. Unlike the former
 `MVCP_ACK` which confirmed mere dispatch, `STARTED` confirms the handler
-has begun processing (process spawned, tool invoked, file opened).
+has begun processing (process spawned, file opened).
 
 - `STARTED` carries a single `bool stream` field (`EncodeStarted`).
 - The frame uses `IS_RESPONSE` with the matching `msg_id`.

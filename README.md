@@ -49,7 +49,7 @@ mvcp/
 | [docs/02-wire-format.md](docs/02-wire-format.md) | Transport frame, MVCP + VPP inner headers, flags, msg_id, primitive encodings |
 | [docs/03-versioning.md](docs/03-versioning.md) | Protocol versioning strategy, compatibility policy |
 | [docs/04-error-codes.md](docs/04-error-codes.md) | Error envelope (`0xFE`) and error code registry |
-| [docs/05-concurrency.md](docs/05-concurrency.md) | Pipelining, streaming, head-of-line blocking, multiple connections |
+| [docs/05-concurrency.md](docs/05-concurrency.md) | Pipelining, streaming multiplexing, concurrency, multiple connections |
 | [docs/06-negotiation.md](docs/06-negotiation.md) | Handshake: HELLO capability negotiation, per-port requirements |
 
 ### Services
@@ -142,7 +142,7 @@ The protocol is **port-agnostic**. These are conventions, not requirements.
 | 9000 | Control/RPC | MVCP |
 | 9001 | Console | VPP |
 | 9002 | Events | MVCP |
-| 9003 | Heartbeat | MVCP |
+| 9003 | Status | MVCP |
 | 9004 | File Transfer | MVCP |
 
 ### Message Categories (MVCP)

@@ -85,7 +85,7 @@ requirements. Any service can run on any port.
 | [docs/02-wire-format.md](docs/02-wire-format.md)               | Transport frame, MVCP header (type/flags/msg_id), VPP header, primitive encodings               |
 | [docs/03-versioning.md](docs/03-versioning.md)                 | Protocol versioning strategy, compatibility policy                                              |
 | [docs/04-error-codes.md](docs/04-error-codes.md)               | Error envelope (`0xFE`) and error code registry                                                |
-| [docs/05-concurrency.md](docs/05-concurrency.md)               | Pipelining, streaming, head-of-line blocking, multiple connections                             |
+| [docs/05-concurrency.md](docs/05-concurrency.md)               | Pipelining, streaming multiplexing, concurrency, multiple connections                          |
 | [docs/06-negotiation.md](docs/06-negotiation.md)               | Handshake: HELLO capability negotiation, per-port requirements, error semantics               |
 
 ### Services (by port / function)
@@ -137,7 +137,7 @@ requirements. Any service can run on any port.
 | GET_STATUS tuned for monitoring                                | Separate from operational RPC (port 9000). Status queries don't contend with execution streams.                |
 | Strings: `uint16` length prefix                                | 64KB max covers all current use cases; file data uses `bytes` with `uint32` length.                           |
 | No per-frame version byte                                      | Wire version is per-connection in the handshake prefix; feature compatibility is negotiated via HELLO capabilities. |
-| Head-of-line blocking during streaming                         | Accepted tradeoff. Multiple connections provide concurrency when needed without frame-interleaving complexity. |
+| Streaming is multiplexed on one connection                     | Frames are self-delimiting and correlated by `msg_id`; concurrent requests and streams coexist, each stream preserving its own ordering. |
 | Port-agnostic design                                           | Any service can run on any port. Port numbers in these docs are Shifty conventions.                           |
 | VPP enforces 64 KB frame limit                                 | Reasonable maximum for interactive terminal data; transport allows 16 MB but VPP rejects larger frames.       |
 | Timeouts via context.Context, not wire-level fields            | Clients already carry deadlines via contexts. No need to duplicate in the protocol.                           |

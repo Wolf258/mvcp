@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Concurrency model — head-of-line blocking removed
+
+- **Streaming no longer blocks the connection**: concurrent requests and
+  streams are multiplexed on one connection via `msg_id` correlation;
+  ordering is preserved within each stream. The restriction was
+  documentation-only — the implemented RPC layer (pending map +
+  per-request goroutine dispatch) already supports multiplexing.
+- **Docs updated**: `docs/05-concurrency.md`, `docs/services/rpc.md`,
+  `SPEC.md`, `docs/01-transport.md`, `docs/services/tools.md`,
+  `README.md`.
+- **Implementation follow-ups**: multiplexed writes need atomic per-frame
+  writes, and slow stream consumers need backpressure (no silent frame
+  drops). Both remain open in the Go implementation.
+
 ### Handshake & capability negotiation
 
 - **HELLO handshake implemented**: replaces the fire-and-forget
@@ -48,7 +62,7 @@
 - **GET_STATUS/STATUS moved**: `0x05`/`0x06` move from port 9000 (Control) to
   port 9003 (Status). Port 9000 is now purely operational (PING, SHUTDOWN,
   EXEC, TOOL_CALL); port 9003 is the monitoring/status channel.
-- **Heartbeat unchanged**: still type `0x07`, `uint64 seq`, 1s interval,
+- **Heartbeat unchanged**: still type `0x07`, `uint64 seq`, 500ms interval,
   `msg_id=0`. The host still uses `time.Now()` for liveness detection.
 - **Bidirectional multiplexing**: a single vsock connection carries both
   unidirectional heartbeat ticks and request/response status queries.
@@ -64,8 +78,8 @@
   opaque `params`/`result` bytes — custom tools can be registered without protocol changes.
 - **Built-in tools**: `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`.
 - **Introspection**: `LIST_TOOLS`/`LIST_TOOLS_RESULT` lets the host discover available tools.
-- **Unary only**: all tool calls are request→response, no streaming. Head-of-line blocking
-  never applies.
+- **Unary only**: all tool calls are request→response, no streaming; concurrent
+  calls are multiplexed on one connection.
 - **Error model**: `TOOL_RESULT(ok=false)` for tool-level failures; error envelope `0xFE`
   with `UNKNOWN_TOOL` (`0x0009`) for unregistered tools.
 - **Range repurposed**: `0x30`–`0x3F` was "Filesystem (reserved)" — now "Tools" on port 9000.

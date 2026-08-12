@@ -74,7 +74,7 @@ to amortise the fixed header cost.
 | 9000 | Control/RPC  | MVCP     | Bidirectional        |
 | 9001 | Console      | VPP      | Bidirectional        |
 | 9002 | Events       | MVCP     | Guest → Host         |
-| 9003 | Heartbeat    | MVCP     | Guest → Host         |
+| 9003 | Status       | MVCP     | Bidirectional        |
 | 9004 | File Transfer| MVCP     | Host-initiated, bidir|
 
 These are conventions. The protocol places no constraints on port
@@ -98,12 +98,14 @@ type dispatch + encoding.
 
 Transport guarantees ensure data reaches the other side, but they do
 **not** confirm that the receiver successfully processed the payload (e.g.
-wrote a chunk to disk, enqueued an event). MVCP provides optional
-application-level acknowledgment via the `WANT_ACK` flag (`0x04`) and
-`MVCP_ACK` type (`0xFB`).
+started a process, wrote a chunk to disk). MVCP provides this via the
+`STARTED` type (`0xFA`): the receiver sends `STARTED` once the handler has
+validated the request and actually begun processing — not on mere
+dispatch. If the handler cannot start, it sends an `ERROR` (`0xFE`)
+instead.
 
-See [02-wire-format.md](02-wire-format.md) for the full `WANT_ACK`
-specification.
+See [02-wire-format.md](02-wire-format.md) for the `STARTED` frame layout
+and [services/rpc.md](services/rpc.md) for its life-cycle.
 
 ## Host-Side Transport (Shifty)
 
@@ -188,8 +190,11 @@ HELLO and independently compute the negotiated capability set.
 ## Multiple Connections
 
 Multiple connections to the same port are allowed. Each connection is an
-independent request/response stream. This enables concurrent EXEC from
-different host-side goroutines without head-of-line blocking.
+independent session with its own `msg_id` counter. Concurrency does not
+require multiple connections — a single connection multiplexes concurrent
+requests and streams — but separate connections provide session
+isolation (e.g. one connection per agent conversation, torn down
+independently).
 File transfers use a dedicated port (9004) and never block RPC traffic.
 
 Port 9001 (console) uses VPP — a separate binary protocol with its own

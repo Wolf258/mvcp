@@ -1,5 +1,9 @@
 # Heartbeat Service (Port 9003)
 
+> **LEGACY — superseded by [status.md](status.md).** Port 9003 is now the
+> bidirectional Status service (GET_STATUS/STATUS + HEARTBEAT). This page
+> is kept for reference; it documents only the heartbeat message.
+
 > Message type `0x07`. One-way G→H. Periodic liveness with extensible
 > TLV extensions.
 

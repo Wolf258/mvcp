@@ -198,8 +198,9 @@ Execution service (port 9000 EXEC) — infrastructure continues to use port
 
 All tool messages use the RPC layer on port 9000. The host is always the
 caller; the guest is the responder. Pipelining (multiple in-flight
-requests per connection) is supported via `msg_id` correlation. Since all
-tool calls are unary, head-of-line blocking never applies.
+requests per connection) is supported via `msg_id` correlation. Tool
+calls are unary — they never open a stream — so concurrent tool calls
+are multiplexed on one connection without blocking each other.
 
 ```
 Host ── type=0x30 flags=0x00 msg_id=0x01 body=<tool_name + params> ──→ Guest

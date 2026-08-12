@@ -259,7 +259,7 @@ VM BOOT
    │       ├── Port 9000: RPC (control + execution + process + service mgmt)
    │       ├── Port 9001: VPP console
    │       ├── Port 9002: Events
-   │       ├── Port 9003: Heartbeat
+   │       ├── Port 9003: Status (heartbeat + query)
 │       └── Port 9004: File Transfer
    │
    └── 4. Agent connects → spawns processes → tools → disconnect
