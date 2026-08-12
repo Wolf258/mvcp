@@ -27,11 +27,15 @@ func ReadFrame(r io.Reader) ([]byte, error) {
 }
 
 func WriteFrame(w io.Writer, payload []byte) error {
-	var header [4]byte
-	binary.BigEndian.PutUint32(header[:], uint32(len(payload)))
-	if _, err := w.Write(header[:]); err != nil {
-		return err
-	}
-	_, err := w.Write(payload)
+	// Single write: header + payload in one syscall. On the vsock hop
+	// each write() is one virtio packet delivered to the guest, so
+	// splitting the frame into two writes doubles the packets,
+	// interrupts, and wake-ups per frame. A single write also makes
+	// concurrent writers safe on stream sockets: each frame is queued
+	// contiguously and can never interleave with another frame.
+	buf := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(payload)))
+	copy(buf[4:], payload)
+	_, err := w.Write(buf)
 	return err
 }

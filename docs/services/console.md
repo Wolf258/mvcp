@@ -64,7 +64,7 @@ payload = type(1) + body(N-1)
 length  = 1 + len(body)
 ```
 
-VPP enforces its own frame limit: **max 64 KB** (65535 bytes) for the
+VPP enforces its own frame limit: **max 64 KB** (65536 bytes) for the
 transport payload. This is enforced at the VPP layer — the transport
 allows up to 16 MB but console frames larger than 64 KB are rejected.
 
@@ -83,7 +83,7 @@ body wastes bytes on every frame.
 ```go
 // ReadFrame is mvcp/protocol.ReadFrame (shared transport)
 payload, err := protocol.ReadFrame(conn)
-if len(payload) < 1 || len(payload) > 65535 {
+if len(payload) < 1 || len(payload) > 65536 {
     // invalid VPP frame
 }
 typ    := payload[0]
@@ -129,10 +129,10 @@ Host-side integration with the existing vsock dial flow:
 
 | Type         | Name      | Direction | Payload                                      | Wire bytes |
 |-------------|-----------|-----------|-----------------------------------------------|------------|
-| `0x00`      | `DATA`    | H↔G       | `[]byte` — raw terminal I/O, length implicit   | `6 + N`    |
+| `0x00`      | `DATA`    | H↔G       | `[]byte` — raw terminal I/O, length implicit   | `5 + N`    |
 | `0x01`      | `WINCH`   | H→G       | `uint16 cols` + `uint16 rows`                  | `9`        |
 | `0x02`      | `DETACH`  | H↔G       | `uint32 exit_code`                             | `9`        |
-| `0x03`      | `ATTACH`  | H→G       | `string term` + `uint16 cols` + `uint16 rows`   | `7+2+len(term)+4` |
+| `0x03`      | `ATTACH`  | H→G       | `string term` + `uint16 cols` + `uint16 rows`   | `11 + len(term)` |
 | `0x04`      | `SESSION` | G→H       | `uint32 session_id` + `uint32 pid` + `uint16 cols` + `uint16 rows` | `17` |
 | `0x05`–`0xFF` | *(reserved)* | —       | —                                             | —          |
 
@@ -202,6 +202,13 @@ On receiving `ATTACH` the guest:
    to the PTY slave
 4. Sends a `SESSION` frame to the host
 5. Begins bidirectional `DATA` forwarding
+
+The guest waits for the client's **first frame** before spawning the
+shell, so a spec-compliant host sends `ATTACH` immediately after the
+handshake — it determines the shell's `TERM` and the initial PTY size.
+Clients that send `DATA`/`WINCH` first or stay silent fall back to
+`TERM=linux` and an 80x24 window after a short timeout; a first frame
+of `DETACH` tears the connection down without spawning anything.
 
 ### `SESSION` (0x04)
 
@@ -307,8 +314,8 @@ Wire sizes include 4-byte transport length prefix + 1-byte inner type.
 keystroke 'a':      [00 00 00 02] [00] [61]                        = 6 bytes
 WINCH 120×40:       [00 00 00 05] [01] [00 78] [00 28]             = 9 bytes
 DETACH(exit=1):     [00 00 00 05] [02] [00 00 00 01]               = 9 bytes
-ATTACH xterm...:    [00 00 00 12] [03] [00 0E] xterm-256color
-                      [00 78] [00 28]                                = 22 bytes
+ATTACH xterm...:    [00 00 00 15] [03] [00 0E] xterm-256color
+                      [00 78] [00 28]                                = 25 bytes
 SESSION:            [00 00 00 0D] [04] [00 00 00 01] [00 00 00 2A]
                       [00 78] [00 28]                                = 17 bytes
 ls -la output (4K): [00 00 10 05] [00] <4096 raw bytes>             = 4101 bytes
