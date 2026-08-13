@@ -12,8 +12,8 @@ import (
 // the single source of truth for the wire format; there is no version
 // field inside HELLO (see docs/06-negotiation.md §2).
 const (
-	mvcpVersion    uint8 = 0x01
-	mvcpMagicSize        = 4
+	mvcpVersion   uint8 = 0x01
+	mvcpMagicSize int   = 4
 )
 
 var mvcpMagic = []byte{'M', 'V', 'C', 'P'}
@@ -22,7 +22,7 @@ var mvcpMagic = []byte{'M', 'V', 'C', 'P'}
 // connection is closed WITHOUT an ERROR frame: the peer may not be able
 // to parse one.
 var (
-	ErrBadMVCPMagic          = errors.New("mvcp: bad handshake magic")
+	ErrBadMVCPMagic           = errors.New("mvcp: bad handshake magic")
 	ErrUnsupportedMVCPVersion = errors.New("mvcp: unsupported wire version")
 )
 

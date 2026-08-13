@@ -37,34 +37,34 @@ func TestNegotiateEmptyAndUnknown(t *testing.T) {
 
 func TestNegotiateEdgeCases(t *testing.T) {
 	cases := []struct {
-		name string
-		peer AdvertisedCapabilities
+		name  string
+		peer  AdvertisedCapabilities
 		local AdvertisedCapabilities
-		want NegotiatedCapabilities
+		want  NegotiatedCapabilities
 	}{
 		{
-			name: "no common range",
-			peer: AdvertisedCapabilities{CapabilityExec: {MinRevision: 3, MaxRevision: 4}},
+			name:  "no common range",
+			peer:  AdvertisedCapabilities{CapabilityExec: {MinRevision: 3, MaxRevision: 4}},
 			local: AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 2}},
-			want: NegotiatedCapabilities{},
+			want:  NegotiatedCapabilities{},
 		},
 		{
-			name: "exact single revision",
-			peer: AdvertisedCapabilities{CapabilityExec: {MinRevision: 2, MaxRevision: 2}},
+			name:  "exact single revision",
+			peer:  AdvertisedCapabilities{CapabilityExec: {MinRevision: 2, MaxRevision: 2}},
 			local: AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 3}},
-			want: NegotiatedCapabilities{CapabilityExec: 2},
+			want:  NegotiatedCapabilities{CapabilityExec: 2},
 		},
 		{
-			name: "highest common revision is min of maxima",
-			peer: AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 2}},
+			name:  "highest common revision is min of maxima",
+			peer:  AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 2}},
 			local: AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 5}},
-			want: NegotiatedCapabilities{CapabilityExec: 2},
+			want:  NegotiatedCapabilities{CapabilityExec: 2},
 		},
 		{
-			name: "peer narrower than local",
-			peer: AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 1}},
+			name:  "peer narrower than local",
+			peer:  AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 1}},
 			local: AdvertisedCapabilities{CapabilityExec: {MinRevision: 1, MaxRevision: 2}},
-			want: NegotiatedCapabilities{CapabilityExec: 1},
+			want:  NegotiatedCapabilities{CapabilityExec: 1},
 		},
 		{
 			name: "partial intersection",
