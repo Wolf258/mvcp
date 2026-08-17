@@ -13,6 +13,12 @@ type AttachMsg struct {
 	Term string
 	Cols uint16
 	Rows uint16
+
+	// SessionID selects the console session to attach to. 0 (or absent,
+	// sent by old hosts) means join-or-create: attach to the workspace's
+	// single session, creating it if absent. A non-zero id targets that
+	// session, created with the requested id if absent.
+	SessionID uint32
 }
 
 func (m *AttachMsg) Encode() []byte {
@@ -20,6 +26,7 @@ func (m *AttachMsg) Encode() []byte {
 	protocol.WriteString(&buf, m.Term)
 	protocol.WriteUint16(&buf, m.Cols)
 	protocol.WriteUint16(&buf, m.Rows)
+	protocol.WriteUint32(&buf, m.SessionID)
 	return buf.Bytes()
 }
 
@@ -40,6 +47,16 @@ func (m *AttachMsg) Decode(body []byte) error {
 	m.Term = term
 	m.Cols = cols
 	m.Rows = rows
+	m.SessionID = 0
+	// SessionID is an additive tail field: old hosts omit it (reads as 0)
+	// and old decoders that predate the field ignore the trailing bytes.
+	if r.Len() >= 4 {
+		sid, err := protocol.ReadUint32(r)
+		if err != nil {
+			return fmt.Errorf("vpp attach: read session_id: %w", err)
+		}
+		m.SessionID = sid
+	}
 	return nil
 }
 

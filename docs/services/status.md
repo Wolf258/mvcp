@@ -100,7 +100,10 @@ added without breaking existing receivers.
 | 3 | Stopping | Shutdown sequence in progress |
 | 4 | Stopped | Shutdown complete |
 | 5 | Failed | VM has failed |
-| 6 | Degraded | VM is running but degraded |
+
+Health is **not** a VM state: it is orthogonal to the lifecycle and
+carried in the `ExtHealth` TLV extension (type 4), 1 byte: `0` = Healthy,
+`1` = Degraded. Default `Healthy` if the TLV is absent.
 
 **Flags** (bitmask):
 
@@ -118,6 +121,8 @@ added without breaking existing receivers.
 | 1 | CPU Usage | `uint32` percentage × 100 |
 | 2 | Memory Usage | `uint32` MiB |
 | 3 | Queue Depth | `uint32` pending requests |
+| 4 | Health | `uint8`: 0 = Healthy, 1 = Degraded |
+| 5 | Failure Reason | variable-length string (State=Failed only) |
 
 **Wire example** — 38 bytes total (34 payload + 4 transport), no extensions:
 

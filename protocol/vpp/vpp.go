@@ -14,6 +14,7 @@ const (
 	TypeDETACH  uint8 = 0x02
 	TypeATTACH  uint8 = 0x03
 	TypeSESSION uint8 = 0x04
+	TypeKILL    uint8 = 0x05
 
 	MaxFrameSize = 64 * 1024
 )

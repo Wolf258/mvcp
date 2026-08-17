@@ -1,5 +1,10 @@
 # Virtual PTY Protocol — VPP (Port 9001)
 
+> **Wire status:** frames `0x00`–`0x05` implemented (phases 0–2, frozen):
+> `KILL` (0x05) and `AttachMsg.SessionID` landed with the phase-2 session
+> registry (see `docs/tmux-console.md` §6–8). The wire is frozen after
+> phase 2 — no further additions are planned.
+
 > Binary-framed interactive terminal protocol. Bidirectional H↔G over
 > a single vsock connection. Replaces the legacy raw-bytes stream.
 
@@ -15,7 +20,7 @@ just a 1-byte type, no flags and no msg_id.
 | Transport frame       | 4 bytes (`uint32` length prefix)    | 4 bytes (`uint32` length prefix) — **same as MVCP** |
 | Inner header          | 6 bytes (`type`+`flags`+`msg_id`)   | 1 byte (`type` only)                |
 | Total overhead/frame  | 10 bytes                            | 5 bytes                             |
-| Request correlation   | `msg_id` + `IS_RESPONSE` flag       | Not needed (one session = one conn)  |
+| Request correlation   | `msg_id` + `IS_RESPONSE` flag       | Not needed (join-or-create; `session_id` in `ATTACH`) |
 | Streaming             | `IS_STREAM_MORE` flag               | Implicit — `DATA` frames are the stream |
 | Max frame             | 16 MB                               | 64 KB (VPP-enforced limit)          |
 | Encoding primitives   | `WriteUint16`, `WriteString`, ...   | Same — shared from `mvcp/protocol/` |
@@ -34,8 +39,10 @@ Host                                    Guest
 └──────────┘                            └───────────┘
 ```
 
-The guest manages a single PTY+shell pair per connection. Only one
-session exists at a time; a new `ATTACH` destroys the previous session.
+The guest keeps a **session registry**. Each `ConsoleSession` owns one
+PTY+shell pair and may have **0..N attached connections** (multi-client).
+`ATTACH` is **join-or-create** and never destructive: a session only dies
+via an explicit `KILL`, the shell exiting, or the VM going away.
 
 ## Transport Frame (shared with MVCP)
 
@@ -122,7 +129,7 @@ Host-side integration with the existing vsock dial flow:
 3. Receive `OK <port>\n`
 4. **Read 4-byte VPP handshake** (`VPP` + `0x01`)
 5. Validate magic + version
-6. Send `ATTACH` frame to initialise the session
+6. Send `ATTACH` frame to create or join the session
 7. Enter frame read/write loop
 
 ## Type Registry
@@ -132,9 +139,10 @@ Host-side integration with the existing vsock dial flow:
 | `0x00`      | `DATA`    | H↔G       | `[]byte` — raw terminal I/O, length implicit   | `5 + N`    |
 | `0x01`      | `WINCH`   | H→G       | `uint16 cols` + `uint16 rows`                  | `9`        |
 | `0x02`      | `DETACH`  | H↔G       | `uint32 exit_code`                             | `9`        |
-| `0x03`      | `ATTACH`  | H→G       | `string term` + `uint16 cols` + `uint16 rows`   | `11 + len(term)` |
+| `0x03`      | `ATTACH`  | H→G       | `string term` + `uint16 cols` + `uint16 rows` + `uint32 session_id` | `15 + len(term)` |
 | `0x04`      | `SESSION` | G→H       | `uint32 session_id` + `uint32 pid` + `uint16 cols` + `uint16 rows` | `17` |
-| `0x05`–`0xFF` | *(reserved)* | —       | —                                             | —          |
+| `0x05`      | `KILL`    | H→G       | *(empty)*                                      | `5`        |
+| `0x06`–`0xFF` | *(reserved)* | —     | —                                              | —          |
 
 All multi-byte integers are **big-endian**. Strings use `uint16` length
 prefix + UTF-8 bytes (same encoding as MVCP, from `mvcp/protocol/encode.go`).
@@ -167,48 +175,65 @@ The guest applies the new size immediately. No response frame is sent.
 
 ### `DETACH` (0x02)
 
-Bidirectional. Signals end of session.
+Bidirectional. H→G: detaches **this connection** — the session keeps
+running. G→H: the shell exited and the session ends.
 
 | Offset | Size | Field                       |
 |--------|------|-----------------------------|
 | 0      | 4    | `exit_code` (uint32, BE)     |
 
-- **Host → Guest:** host sends `exit_code = 0`. Guest kills the shell
-  (`SIGKILL`), closes the PTY, then closes the vsock connection.
-- **Guest → Host:** shell exited. Guest sends the real exit code, then
-  closes the vsock connection after the host has read the frame.
+- **Host → Guest:** the host detaches **this connection** and sends
+  `exit_code=0`, which the guest ignores. The guest removes the
+  connection from its session and keeps the session running (DETACHED if
+  it was the last connection); the connection closes after the frame. To
+  destroy the session instead, send `KILL` (0x05).
+- **Guest → Host:** the shell exited. Guest broadcasts the real exit code
+  to every attached connection, then closes them.
 
-In both cases the connection is closed after `DETACH`. A new attach
-requires a new `vsock dial`.
+After a host→guest `DETACH` the connection is closed; re-attaching to the
+same (still running) session requires a new `vsock dial` + `ATTACH`.
 
 ### `ATTACH` (0x03)
 
-Host → Guest only. Initialises a new interactive session.
+Host → Guest only. Creates or joins an interactive session.
 
 | Offset | Size   | Field                                    |
 |--------|--------|------------------------------------------|
 | 0      | 2 + N  | `term` (string, uint16-prefixed UTF-8)    |
 | 2+N    | 2      | `cols` (uint16, BE)                       |
 | 4+N    | 2      | `rows` (uint16, BE)                       |
+| 6+N    | 4      | `session_id` (uint32, BE)                 |
 
 The `term` string (e.g. `"xterm-256color"`) is set as the `TERM`
 environment variable for the shell process. `cols` and `rows` set the
 initial PTY dimensions.
 
+`session_id` selects the target session: `0` (or absent — old hosts) means
+**join-or-create** — join the existing session for this guest, or create
+one; a non-zero id targets that specific session, creating it with the
+requested id if absent. The field is appended at the end of the payload so
+old decoders still read `term`/`cols`/`rows` correctly (trailing bytes are
+ignored) and old hosts read as 0.
+
 On receiving `ATTACH` the guest:
-1. Destroys any existing PTY+shell session
-2. Opens a new PTY with the requested dimensions
-3. Spawns `/bin/sh -i` with `TERM=<term>`, stdin/stdout/stderr connected
-   to the PTY slave
-4. Sends a `SESSION` frame to the host
-5. Begins bidirectional `DATA` forwarding
+1. Resolves the target session per `session_id` — **never destructive**:
+   existing sessions are joined, not replaced
+2. If the session is new: opens a PTY with the requested dimensions,
+   spawns the console shell with `TERM=<term>` — `/bin/bash -i` when the
+   image provides it, `/bin/sh -i` otherwise (bash is the supported
+   console shell, see `docs/tmux-console.md` §5) — stdin/stdout/stderr
+   connected to the PTY slave (`TERM` and size are fixed at creation;
+   later joins only apply their carried size)
+3. Sends a `SESSION` frame to the host — the same `session_id` for every
+   connection attached to the same session
+4. Begins bidirectional `DATA` forwarding
 
 The guest waits for the client's **first frame** before spawning the
 shell, so a spec-compliant host sends `ATTACH` immediately after the
 handshake — it determines the shell's `TERM` and the initial PTY size.
 Clients that send `DATA`/`WINCH` first or stay silent fall back to
 `TERM=linux` and an 80x24 window after a short timeout; a first frame
-of `DETACH` tears the connection down without spawning anything.
+of `DETACH` closes the connection without creating or joining anything.
 
 ### `SESSION` (0x04)
 
@@ -221,12 +246,28 @@ Guest → Host only. Confirms session creation after `ATTACH`.
 | 8      | 2    | `cols` (uint16, BE)           |
 | 10     | 2    | `rows` (uint16, BE)           |
 
-- `session_id` — opaque identifier. Allocated by the guest. Currently
-  starts at 1 and increments per session; reserved for future multi-session
-  support.
+- `session_id` — opaque identifier allocated by the guest (increments per
+  session). Stable for the lifetime of the session; every connection
+  attached to the same session receives the same id.
 - `pid` — shell process PID inside the guest.
 - `cols` / `rows` — confirmed PTY dimensions (should match the `ATTACH`
   request; may differ if the guest enforces limits).
+
+### `KILL` (0x05)
+
+Host → Guest only. Destroys the session this connection is attached to:
+SIGKILL the shell, close the PTY, remove the session from the registry,
+broadcast `DETACH{exit_code}` to the remaining connections, then close.
+The body is empty.
+
+Guards:
+
+- A `KILL` received on a connection that is not attached to a live
+  session (or targeting an already-dead session) is a **no-op**: the
+  guest simply closes the connection.
+- A dropped connection (queue full) is closed **immediately**; in-flight
+  frames from a dropped connection are ignored — a `KILL` racing a drop
+  cannot destroy the session.
 
 ## Session Lifecycle
 
@@ -236,39 +277,56 @@ HOST                                    GUEST
   | --- vsock dial 9001 --->              | accept()
   |                    <--- [VPP\x01] ---- handshake (4 bytes)
   |                                       |
-  | --- ATTACH("xterm-256color",120,40) -->|  openPTY(120,40)
-  |                                       |  fork /bin/sh -i
+  | --- ATTACH(0,"xterm-256color",120,40) ->|  no session → create PTY + console shell
   |                    <--- SESSION(1,42,120,40) ---
   |                                       |
   | <============ DATA ====================>  bidirectional I/O
   |                                       |
   | --- WINCH(100,30) --->                |  ioctl(TIOCSWINSZ, 100, 30)
   |                                       |
-  | --- DETACH(0) --->                    |  SIGKILL shell, close PTY
-  |   (cierra conn)     <--- close -------|  close vsock fd
+  | --- DETACH(0) --->                    |  remove connection; session keeps
+  |   (closes conn)                       |  running (DETACHED until re-attach)
+  |                                       |
+  | ... or ...                            |
+  | --- KILL --->                         |  SIGKILL shell, close PTY, delete
+  |   (closes conn)                       |  session; broadcast DETACH to the rest
   |                                       |
   | ... or ...                            |
   |                                       |  shell exit(1)
   |                    <--- DETACH(1) -----|
-  |   (lee exit_code)   <--- close -------|  close vsock fd
+  |   (reads exit_code)   <--- close -----|  close vsock fd
   |                                       |
-  | (new dial para otra sesión)           |
+  | second client, same session:          |
+  | --- ATTACH(1,"tmux-256color",120,40) -> join existing session (never destructive)
+  |                    <--- SESSION(1,42,120,40) ---  (same id, same pid)
 ```
 
 **Rules:**
 
-- **One session = one connection.** `DETACH` always closes the vsock
-  connection from the guest side. A new session starts with a fresh
+- **One session = one PTY+shell; 0..N connections.** `ATTACH` joins or
+  creates — it never destroys. New connections start with a fresh
   vsock dial, a new handshake, and a new `ATTACH`.
-- **ATTACH is destructive.** If a session is already running and a new
-  connection sends `ATTACH`, the guest kills the old shell and PTY
-  before creating the new one. Sessions are never handed off between
-  connections.
+- **A connection leaving never kills the session.** `DETACH` (H→G) and
+  unexpected EOF both just remove that connection; the session keeps
+  running and can be re-attached (DETACHED state). Only `KILL`, the
+  shell exiting, or the VM going away destroys a session.
+- **`KILL` (H→G) destroys the session** this connection is attached to:
+  SIGKILL the shell, close the PTY, remove the session from the registry,
+  broadcast `DETACH{exit_code}` to the remaining connections, then close.
+- **A dropped connection is closed immediately.** When a connection's
+  bounded queue overflows (slow client), the guest closes its fd right
+  away and ignores any in-flight frames from it — a `KILL` racing a drop
+  cannot destroy the session.
+- **`KILL` to an unattached/unknown session is a no-op.** A connection
+  that is not attached to a live session cannot destroy anything — the
+  guest simply closes the connection.
 - **WINCH is fire-and-forget.** No response from guest. The host may
-  send `WINCH` frames at any time during a session.
-- **DETACH host→guest means "disconnect me".** The host sends `exit_code=0`
-  and the guest terminates the shell. Used as a clean replacement for
-  the legacy Ctrl+\ (0x1C) escape.
+  send `WINCH` frames at any time during a session. The PTY has a single
+  shared size: the last `WINCH` (or the size carried by a joining
+  `ATTACH`) wins for all connections.
+- **DETACH host→guest means "detach this connection".** The session
+  survives. Clean replacement for the legacy Ctrl+\ (0x1C) escape on the
+  raw path.
 
 ## Encoding Primitives
 
@@ -314,8 +372,9 @@ Wire sizes include 4-byte transport length prefix + 1-byte inner type.
 keystroke 'a':      [00 00 00 02] [00] [61]                        = 6 bytes
 WINCH 120×40:       [00 00 00 05] [01] [00 78] [00 28]             = 9 bytes
 DETACH(exit=1):     [00 00 00 05] [02] [00 00 00 01]               = 9 bytes
-ATTACH xterm...:    [00 00 00 15] [03] [00 0E] xterm-256color
-                      [00 78] [00 28]                                = 25 bytes
+KILL:               [00 00 00 01] [05]                              = 5 bytes
+ATTACH xterm...:    [00 00 00 19] [03] [00 0E] xterm-256color
+                      [00 78] [00 28] [00 00 00 00]                  = 29 bytes
 SESSION:            [00 00 00 0D] [04] [00 00 00 01] [00 00 00 2A]
                       [00 78] [00 28]                                = 17 bytes
 ls -la output (4K): [00 00 10 05] [00] <4096 raw bytes>             = 4101 bytes
