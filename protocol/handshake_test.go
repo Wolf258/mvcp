@@ -177,6 +177,9 @@ func TestHandshakeClientRejectsRole(t *testing.T) {
 		t.Fatalf("client error = %v, want HandshakeError(UNEXPECTED_ROLE)", err)
 	}
 	// The server sees a closed connection (client rejected without replying).
+	// Close now so the server's pending hello read fails immediately instead
+	// of waiting for the handshake deadline.
+	clientEnd.Close()
 	waitHSResult(t, serverCh)
 }
 
@@ -204,6 +207,20 @@ func TestHandshakeRequirementsFailServerSide(t *testing.T) {
 		t.Fatalf("client handshake should not fail locally: %v", err)
 	}
 
+	// The server must have sent an ERROR frame. Read it BEFORE waiting for
+	// the server goroutine: the server only finishes once its ERROR write is
+	// consumed (otherwise the write stays blocked until the deadline).
+	frame, err := ReadMVCPFrame(client)
+	if err != nil {
+		t.Fatalf("read error frame: %v", err)
+	}
+	if frame.Type != TypeERROR || len(frame.Body) < 2 {
+		t.Fatalf("expected ERROR frame, got type=0x%02X body=%x", frame.Type, frame.Body)
+	}
+	if code := binary.BigEndian.Uint16(frame.Body[:2]); code != ErrorCodeNoCommonCapability {
+		t.Fatalf("error code = 0x%04X, want 0x%04X", code, ErrorCodeNoCommonCapability)
+	}
+
 	sr := waitHSResult(t, serverCh)
 	var he *HandshakeError
 	if !errors.As(sr.err, &he) || he.Code != ErrorCodeNoCommonCapability {
@@ -226,6 +243,10 @@ func TestHandshakeRequirementsFailClientSide(t *testing.T) {
 			[]PeerRole{RoleCore, RoleCLI},
 			nil,
 		)
+		// The rejected client sends an ERROR frame that nobody reads (the
+		// server already completed its side). Close the pipe so that write
+		// unblocks immediately instead of waiting for the deadline.
+		serverEnd.Close()
 		serverCh <- hsResult{err: err}
 	}()
 
