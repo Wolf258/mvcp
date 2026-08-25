@@ -94,6 +94,10 @@ func TestHelloRejections(t *testing.T) {
 			data: []byte{4, 0, 1, 'v', 0, 0}, // role=4, version "v", count=0
 		},
 		{
+			name: "retired role enum value",
+			data: []byte{3, 0, 1, 'v', 0, 0}, // role=3 (former CLI slot), version "v", count=0
+		},
+		{
 			name: "truncated body",
 			data: []byte{1, 0, 5, 'h'}, // claims 5-byte version, only 1 present
 		},

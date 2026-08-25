@@ -197,8 +197,7 @@ mvcp/
 | 11   | Migrate `vhandler/heartbeat.go` → MVCP status service (port 9003, bidirectional) | `shifty-vhandler/`       | Done |
 | 12   | Update `shared/vsock/rpc.go` → MVCP RPC client                  | `shared/`                | Done |
 | 13   | Update `shared/vsock/events.go` → MVCP event reader             | `shared/`                | Done |
-| 14   | Update `shiftyctl` to speak MVCP                                | `shifty-vhandler/shiftyctl/` | Done |
-| 15   | Remove legacy JSON RPC types and dead code                      | All modules              | Done |
+| 14   | Remove legacy JSON RPC types and dead code                      | All modules              | Done |
 
 ---
 

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Removed in-guest diagnostic CLI (`shiftyctl`) and `RoleCLI`
+
+- **`RoleCLI` removed from the peer-role enum**: valid roles are now
+  only `Core` (1) and `VHandler` (2); unknown values fail HELLO
+  decoding with `ERROR(BAD_PAYLOAD)`. A HELLO announcing the retired
+  role 3 no longer negotiates.
+- **`shifty-vhandler/shiftyctl/` deleted**: the guest has no control
+  plane of its own. Authority stays host-side (`shifty-cli` → core →
+  controller); humans use the console (VPP, port 9001), and
+  coordinated shutdown is driven by core over MVCP (`TypeSHUTDOWN`
+  on port 9000). The role byte was self-declared and unauthenticated,
+  so an extra accepted role only widened the attack surface for
+  in-guest processes without adding capability.
+- **Docs updated**: `docs/06-negotiation.md` (§3, §4, §8.2, §11),
+  `SPEC.md`.
+
 ### Concurrency model — head-of-line blocking removed
 
 - **Streaming no longer blocks the connection**: concurrent requests and
@@ -36,8 +52,7 @@
   `portRequirements`, vhandler `sessionReqs`); port 9003 has none.
 - **Guest-side handshake deadline**: the vhandler vsock fd now supports
   a handshake deadline via `SO_RCVTIMEO`/`SO_SNDTIMEO` (EAGAIN
-  surfaces as `os.ErrDeadlineExceeded`); shiftyctl dials with
-  `ClientHandshake` (role CLI).
+  surfaces as `os.ErrDeadlineExceeded`).
 - **Old API removed**: `WriteMVCPHandshake`/`ValidateMVCPHandshake`/
   `ErrBadMVCPHandshake` replaced by the HELLO helpers and
   `ErrBadMVCPMagic`/`ErrUnsupportedMVCPVersion`.

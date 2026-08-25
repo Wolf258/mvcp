@@ -68,7 +68,7 @@ func TestHandshakeHappyPath(t *testing.T) {
 		peer, negotiated, err := ServerHandshake(
 			server,
 			NewHello(RoleVHandler, "vhandler-0.8.2", DefaultCapabilities),
-			[]PeerRole{RoleCore, RoleCLI},
+			[]PeerRole{RoleCore},
 			reqs,
 		)
 		serverCh <- hsResult{peer: peer, negotiated: negotiated, err: err}
@@ -164,8 +164,8 @@ func TestHandshakeClientRejectsRole(t *testing.T) {
 	go func() {
 		_, _, err := ServerHandshake(
 			server,
-			NewHello(RoleCLI, "v", DefaultCapabilities), // misbehaving peer: a CLI on the vhandler side
-			[]PeerRole{RoleCore, RoleCLI},
+			NewHello(RoleCore, "v", DefaultCapabilities), // misbehaving peer: core software on the vhandler side
+			[]PeerRole{RoleCore},
 			nil,
 		)
 		serverCh <- hsResult{err: err}
@@ -195,7 +195,7 @@ func TestHandshakeRequirementsFailServerSide(t *testing.T) {
 		_, _, err := ServerHandshake(
 			server,
 			NewHello(RoleVHandler, "v", DefaultCapabilities),
-			[]PeerRole{RoleCore, RoleCLI},
+			[]PeerRole{RoleCore},
 			Requirements{CapabilityExec: 1},
 		)
 		serverCh <- hsResult{err: err}
@@ -240,7 +240,7 @@ func TestHandshakeRequirementsFailClientSide(t *testing.T) {
 		_, _, err := ServerHandshake(
 			server,
 			NewHello(RoleVHandler, "v", AdvertisedCapabilities{CapabilityEvents: {MinRevision: 1, MaxRevision: 1}}),
-			[]PeerRole{RoleCore, RoleCLI},
+			[]PeerRole{RoleCore},
 			nil,
 		)
 		// The rejected client sends an ERROR frame that nobody reads (the
@@ -270,7 +270,7 @@ func TestHandshakeMalformedPeerHello(t *testing.T) {
 
 	serverCh := make(chan hsResult, 1)
 	go func() {
-		_, _, err := ServerHandshake(server, NewHello(RoleVHandler, "v", DefaultCapabilities), []PeerRole{RoleCore, RoleCLI}, nil)
+		_, _, err := ServerHandshake(server, NewHello(RoleVHandler, "v", DefaultCapabilities), []PeerRole{RoleCore}, nil)
 		serverCh <- hsResult{err: err}
 	}()
 
@@ -315,7 +315,7 @@ func TestHandshakeWireVersionMismatch(t *testing.T) {
 
 	serverCh := make(chan hsResult, 1)
 	go func() {
-		_, _, err := ServerHandshake(server, NewHello(RoleVHandler, "v", DefaultCapabilities), []PeerRole{RoleCore, RoleCLI}, nil)
+		_, _, err := ServerHandshake(server, NewHello(RoleVHandler, "v", DefaultCapabilities), []PeerRole{RoleCore}, nil)
 		serverCh <- hsResult{err: err}
 	}()
 

@@ -39,8 +39,6 @@ const (
 	RoleCore PeerRole = 1
 	// RoleVHandler is the guest agent (vhandler).
 	RoleVHandler PeerRole = 2
-	// RoleCLI is the in-guest diagnostic CLI (shiftyctl).
-	RoleCLI PeerRole = 3
 )
 
 // CapabilityID identifies a negotiable message family. The baseline
@@ -131,7 +129,7 @@ func (h *Hello) advertised() AdvertisedCapabilities {
 //
 // Capability entries are sorted by ID ascending.
 func (h *Hello) MarshalBinary() ([]byte, error) {
-	if h.Role == RoleUnknown || h.Role > RoleCLI {
+	if h.Role == RoleUnknown || h.Role > RoleVHandler {
 		return nil, fmt.Errorf("mvcp: hello: invalid role %d", h.Role)
 	}
 	if len(h.SoftwareVersion) > maxHelloVersionLen {
@@ -188,7 +186,7 @@ func (h *Hello) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return malformed(err)
 	}
-	if role > uint8(RoleCLI) {
+	if role > uint8(RoleVHandler) {
 		return fmt.Errorf("%w: invalid role %d", errMalformedHello, role)
 	}
 

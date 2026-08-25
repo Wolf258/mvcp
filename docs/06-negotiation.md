@@ -40,11 +40,11 @@ VPP:   "VPP"  + 0x01   (4 bytes, port 9001)
 ## 3. Handshake Flow
 
 Invariant preserved: **the vhandler (guest agent) writes first** on
-every MVCP port, regardless of who initiated the connection. Core and
-shiftyctl are always the reading side.
+every MVCP port, regardless of who initiated the connection. Core is
+always the reading side.
 
 ```
-vhandler (ServerHandshake):            core / shiftyctl (ClientHandshake):
+vhandler (ServerHandshake):            core (ClientHandshake):
 
   write prefix "MVCP" + 0x01             read prefix
   write frame(HELLO, own table)          │ bad magic/version → close (no ERROR)
@@ -113,7 +113,6 @@ const (
     RoleUnknown  PeerRole = 0 // reserved — never valid on the wire
     RoleCore     PeerRole = 1 // shifty-core (host daemon)
     RoleVHandler PeerRole = 2 // vhandler (guest agent)
-    RoleCLI      PeerRole = 3 // shiftyctl (in-guest CLI)
 )
 
 type CapabilityID uint8
@@ -149,7 +148,7 @@ type Hello struct {
 ### 4.3 Semantics
 
 - **Role** identifies the component, not "host"/"guest": Core,
-  VHandler, CLI. Each endpoint validates which peer roles it accepts
+  VHandler. Each endpoint validates which peer roles it accepts
   (section 8).
 - **SoftwareVersion** is free-form (`"0.8.2"`, `"0.8.2-dev+17a39d"`).
   It is for logging and triage only and is **explicitly excluded from
@@ -167,7 +166,7 @@ type Hello struct {
 - `software_version ≤ 128` bytes (checked before allocating)
 - `min_revision ≤ max_revision`
 - capability IDs unique (duplicate → malformed)
-- `role ∈ {1, 2, 3}`; unknown enum values → malformed
+- `role ∈ {1, 2}`; unknown enum values → malformed
 
 Malformed HELLO → reject with `ERROR(BAD_PAYLOAD, …)`. `RoleUnknown`
 (0) is well-formed but never accepted → reject with
@@ -277,7 +276,7 @@ func NewHello(role PeerRole, softwareVersion string, caps AdvertisedCapabilities
 func ServerHandshake(rw io.ReadWriter, local *Hello,
     acceptRoles []PeerRole, reqs Requirements) (*Hello, NegotiatedCapabilities, error)
 
-// Client side (core dials, shiftyctl): reads the peer's prefix + HELLO
+// Client side (core dials): reads the peer's prefix + HELLO
 // first, then writes its own. Rejects with ERROR on failure.
 func ClientHandshake(rw io.ReadWriter, local *Hello,
     expectRoles []PeerRole, reqs Requirements) (*Hello, NegotiatedCapabilities, error)
@@ -311,9 +310,8 @@ baseline status/heartbeat contract is what drives the VM lifecycle.
 
 | Endpoint                        | Accepts / expects peer role          |
 |---------------------------------|--------------------------------------|
-| vhandler sessions (9000/9002/9003/9004) | Core, CLI                    |
+| vhandler sessions (9000/9002/9003/9004) | Core                         |
 | core dial endpoints (all ports) | VHandler                             |
-| shiftyctl                       | VHandler                             |
 
 An unexpected role is rejected during the handshake with
 `ERROR(UNEXPECTED_ROLE, …)` — a cheap sanity check that catches
@@ -383,10 +381,6 @@ shifty-vhandler:
   four MVCP sessions use it
 - `server.go` `fdReadWriter.SetDeadline`: SO_RCVTIMEO/SO_SNDTIMEO;
   `console.go` fdReader maps EAGAIN to `os.ErrDeadlineExceeded`
-- shiftyctl dials with `ClientHandshake` (role CLI, expects VHandler)
-  via its own `vsockRW` deadline wrapper. Peer-wiring caveat: per
-  docs shiftyctl talks to the vhandler; verify against the real peer
-  when the host-side vsock path exists.
 
 Tests (all green under `make test`, race detector on):
 - `mvcp/protocol/negotiate_test.go`: symmetry property over random

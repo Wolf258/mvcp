@@ -172,7 +172,7 @@ func ServerHandshake(rw io.ReadWriter, local *Hello, acceptRoles []PeerRole, req
 }
 
 // ClientHandshake performs the MVCP handshake on the dialing side
-// (shifty-core, shiftyctl). It reads and validates the peer's prefix +
+// (shifty-core). It reads and validates the peer's prefix +
 // HELLO first, then writes its own prefix + HELLO, negotiates and
 // enforces reqs. On rejection the caller must close the connection; the
 // peer observes a closed connection on its next I/O. The handshake
