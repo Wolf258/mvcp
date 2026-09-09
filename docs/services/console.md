@@ -2,7 +2,7 @@
 
 > **Wire status:** frames `0x00`–`0x05` implemented (phases 0–2, frozen):
 > `KILL` (0x05) and `AttachMsg.SessionID` landed with the phase-2 session
-> registry (see `docs/tmux-console.md` §6–8). The wire is frozen after
+> registry (see `docs/subsystems/console-sessions.md` §6–8). The wire is frozen after
 > phase 2 — no further additions are planned.
 
 > Binary-framed interactive terminal protocol. Bidirectional H↔G over
@@ -220,8 +220,8 @@ On receiving `ATTACH` the guest:
    existing sessions are joined, not replaced
 2. If the session is new: opens a PTY with the requested dimensions,
    spawns the console shell with `TERM=<term>` — `/bin/bash -i` when the
-   image provides it, `/bin/sh -i` otherwise (bash is the supported
-   console shell, see `docs/tmux-console.md` §5) — stdin/stdout/stderr
+    image provides it, `/bin/sh -i` otherwise (bash is the supported
+    console shell, see `docs/subsystems/console-sessions.md` §5) — stdin/stdout/stderr
    connected to the PTY slave (`TERM` and size are fixed at creation;
    later joins only apply their carried size)
 3. Sends a `SESSION` frame to the host — the same `session_id` for every
@@ -386,4 +386,4 @@ See also:
 - [01-transport.md](../01-transport.md) for the shared transport frame and vsock dial flow.
 - [02-wire-format.md](../02-wire-format.md) for MVCP's frame layout and shared encoding primitives.
 - [../SPEC.md](../SPEC.md) for the protocol hub and service port table.
-- [shifty-vhandler/docs/architecture.md](../../shifty-vhandler/docs/architecture.md) for the guest-side VPP service implementation.
+- [docs/components/vhandler.md](../../../docs/components/vhandler.md) + [docs/subsystems/events-health.md](../../../docs/subsystems/events-health.md) for the guest-side service implementation and lifecycle.

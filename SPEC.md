@@ -203,4 +203,4 @@ mvcp/
 
 See also:
 - [CHANGELOG.md](CHANGELOG.md) for version history.
-- [docs/mvcp-integration.md](../docs/mvcp-integration.md) for Shifty-specific integration notes.
+- [docs/subsystems/mvcp.md](../docs/subsystems/mvcp.md) for Shifty-specific integration notes.
