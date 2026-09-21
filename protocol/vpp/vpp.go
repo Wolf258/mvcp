@@ -19,6 +19,21 @@ const (
 	MaxFrameSize = 64 * 1024
 )
 
+// DetachMsg.ExitCode values the guest uses when the attachment — not the
+// shell — ends the stream. A shell that exits on its own always reports its
+// real status, so these sentinels are unambiguous to the client.
+const (
+	// ExitInitFailed: /init.sh failed before the console shell could start
+	// (124 is the conventional "command timed out" code).
+	ExitInitFailed uint32 = 124
+	// ExitOverloaded: the guest dropped the attachment because the client
+	// made no drain progress while the session's output queue was over
+	// budget. The session (PTY + shell) survives; reattaching resumes it.
+	ExitOverloaded uint32 = 125
+	// ExitKilled: a KILL frame destroyed the session (128 + SIGKILL).
+	ExitKilled uint32 = 137
+)
+
 var ErrFrameTooLarge = errors.New("vpp: frame exceeds maximum size of 64 KB")
 
 type Frame struct {

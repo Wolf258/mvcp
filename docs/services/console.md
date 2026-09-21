@@ -160,7 +160,11 @@ A single keystroke `'a'` fits in a 6-byte frame:
 
 The sender should **batch small writes** into fewer, larger frames to
 amortise the 5-byte overhead. Implementations may use a buffered flush
-with a short deadline (e.g. 5 ms) or a buffer threshold (e.g. 4 KB).
+with a short deadline (e.g. 5 ms) or a buffer threshold (e.g. 4 KB). The
+guest's console pump does exactly this: it coalesces PTY reads into frames of
+up to `ConsoleCoalesceMax` (32 KB), flushed `ConsoleCoalesceDelay` (10 ms)
+after the first pending byte, so a producer that writes many tiny pieces
+(line-oriented tools, TUI redraws) does not spend one queue slot per piece.
 
 ### `WINCH` (0x01)
 
@@ -187,8 +191,22 @@ running. G→H: the shell exited and the session ends.
   connection from its session and keeps the session running (DETACHED if
   it was the last connection); the connection closes after the frame. To
   destroy the session instead, send `KILL` (0x05).
-- **Guest → Host:** the shell exited. Guest broadcasts the real exit code
-  to every attached connection, then closes them.
+- **Guest → Host:** the stream ends. The guest sends the shell's real exit
+  status, or one of the sentinel codes below when the *attachment* ended
+  rather than the shell, and then closes the connection.
+
+| `exit_code`            | Meaning |
+|------------------------|---------|
+| shell status           | the shell exited on its own (`0..255`, `128+signal` when signalled) |
+| `124` (`ExitInitFailed`)| `/init.sh` failed before the console shell could start |
+| `125` (`ExitOverloaded`)| the guest dropped this attachment for backpressure: the client made no drain progress while the session's output queue was over budget. **The session survives** — a later `ATTACH` rejoins it |
+| `137` (`ExitKilled`)   | a `KILL` frame destroyed the session (`128 + SIGKILL`) |
+
+`125` always arrives **after** the `DATA` frames already queued for that
+client, so a merely slow reader still receives the output it was owed, and it
+must be treated as a transport decision rather than a shell exit. A write
+error on the guest side cannot be announced (the socket is gone); the client
+sees a bare EOF.
 
 After a host→guest `DETACH` the connection is closed; re-attaching to the
 same (still running) session requires a new `vsock dial` + `ATTACH`.
@@ -265,9 +283,10 @@ Guards:
 - A `KILL` received on a connection that is not attached to a live
   session (or targeting an already-dead session) is a **no-op**: the
   guest simply closes the connection.
-- A dropped connection (queue full) is closed **immediately**; in-flight
-  frames from a dropped connection are ignored — a `KILL` racing a drop
-  cannot destroy the session.
+- A dropped connection (queue over budget, no drain progress within the
+  grace) is unregistered and told why (`DETACH{exit_code=125}`) before it is
+  closed; in-flight frames from a dropped connection are ignored — a `KILL`
+  racing a drop cannot destroy the session.
 
 ## Session Lifecycle
 
@@ -313,9 +332,11 @@ HOST                                    GUEST
 - **`KILL` (H→G) destroys the session** this connection is attached to:
   SIGKILL the shell, close the PTY, remove the session from the registry,
   broadcast `DETACH{exit_code}` to the remaining connections, then close.
-- **A dropped connection is closed immediately.** When a connection's
-  bounded queue overflows (slow client), the guest closes its fd right
-  away and ignores any in-flight frames from it — a `KILL` racing a drop
+- **A dropped connection is closed after it is told why.** A connection
+  whose byte-bounded queue overflows and that makes no drain progress within
+  the grace period (slow client) is unregistered, sent
+  `DETACH{exit_code=125}` behind the frames already queued for it, and then
+  closed; in-flight frames from it are ignored, so a `KILL` racing a drop
   cannot destroy the session.
 - **`KILL` to an unattached/unknown session is a no-op.** A connection
   that is not attached to a live session cannot destroy anything — the
