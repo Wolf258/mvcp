@@ -67,6 +67,11 @@ func (r *Request) Error(code uint16, message string) error {
 	})
 }
 
+// Started sends the acceptance notification for this request. Per
+// mvcp/docs/services/rpc.md, STARTED is NOT a response: it carries
+// flags=0 and the request's msg_id, and any consumer that wants the
+// response must keep waiting after it. rpc.Client.Call skips it;
+// rpc.Client.Stream delivers it as the first frame.
 func (r *Request) Started(stream bool) error {
 	return protocol.WriteMVCPFrame(r.conn, &protocol.Frame{
 		Type:  protocol.TypeSTARTED,
