@@ -131,25 +131,39 @@ func TestStreamSlowConsumerDoesNotLoseFrames(t *testing.T) {
 }
 
 func TestAbandonedStreamUnblocksReadLoop(t *testing.T) {
+	const total = 64 // > inbox(16) + out(16): the read loop blocks in send
 	client, _ := startTestServer(t, func(srv *Server) {
-		srv.Handle(protocol.TypePING, func(ctx context.Context, req *Request) error {
-			if err := req.Started(false); err != nil {
-				return err
+		srv.Handle(protocol.TypeEXEC, func(ctx context.Context, req *Request) error {
+			for i := 0; i < total; i++ {
+				if err := req.Stream(protocol.TypePONG, []byte{byte(i)}); err != nil {
+					return nil // stream abandoned: stop producing
+				}
 			}
+			return req.Respond(protocol.TypePONG, []byte("done"))
+		})
+		srv.Handle(protocol.TypePING, func(ctx context.Context, req *Request) error {
 			return req.Respond(protocol.TypePONG, []byte("ok"))
 		})
 	})
 	ctx, cancel := context.WithCancel(context.Background())
-	ch, err := client.Stream(ctx, protocol.TypePING, nil)
+	ch, err := client.Stream(ctx, protocol.TypeEXEC, nil)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	<-ch // consume STARTED
+	// Consume one frame, then stop draining: the buffers fill and the
+	// read loop blocks in send, which is the state this test must escape.
+	<-ch
+	time.Sleep(50 * time.Millisecond)
 	cancel()
-	// The readLoop must keep serving the same connection after the
-	// abandoned pending is removed.
-	time.Sleep(20 * time.Millisecond)
-	if _, err := client.Call(context.Background(), protocol.TypePING, nil); err != nil {
-		t.Fatalf("Call after abandonment: %v", err)
+	// The readLoop must be unblocked by the abandonment and keep serving
+	// the same connection.
+	callCtx, callCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer callCancel()
+	resp, err := client.Call(callCtx, protocol.TypePING, nil)
+	if err != nil {
+		t.Fatalf("Call after abandoning a blocked stream: %v", err)
+	}
+	if resp.Type != protocol.TypePONG || string(resp.Body) != "ok" {
+		t.Fatalf("response = type 0x%02X body %q, want PONG/ok", resp.Type, resp.Body)
 	}
 }
