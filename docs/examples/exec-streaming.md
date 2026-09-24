@@ -23,18 +23,16 @@ Host                           Guest
 
 ## EXEC Request
 
-Same as the non-streaming case, with `FlagExecStreaming` (0x04) set in flags:
+Same as the non-streaming case, with `FlagExecStreaming` (0x04) set in flags.
+`timeout_ms` is omitted, so the guest applies the policy default
+(`config.ExecDefaultTimeout`, 5m) — never "unlimited":
 
 ```
- length: 0x00_00_00_2A   (42 = 6 + 36 payload)
+ length: 0x00_00_00_3A   (58 = 6 + 52 body)
    type: 0x10             (EXEC)
   flags: 0x04             (FlagExecStreaming)
  msg_id: 0x00_00_00_02
-payload:
-  string "find / -name '*.log'"
-  string "/"
-  map<string,string> {}
-  uint32 0                (no timeout)
+ body: {"command":"find / -name '*.log'","workdir":"/work"}
 ```
 
 ## EXEC_STREAM Chunk (Guest → Host)
@@ -42,8 +40,8 @@ payload:
 Stdout chunk with sequence 0:
 
 ```
- length: 0x00_00_04_15   (1045 = 6 + 9 + 1030 payload)
-   type: 0x11             (EXEC_STREAM)
+ length: 0x00_00_04_0F   (1039 = 6 + 1033 payload)
+   type: 0x11             (EXECSTREAM)
   flags: 0x02             (IS_STREAM_MORE — more chunks follow)
  msg_id: 0x00_00_00_02    (matches EXEC request)
 payload:
@@ -55,8 +53,8 @@ payload:
 Stderr chunk with sequence 2:
 
 ```
- length: 0x00_00_00_6F   (111 = 6 + 9 + 96 payload)
-   type: 0x11             (EXEC_STREAM)
+ length: 0x00_00_00_69   (105 = 6 + 99 payload)
+   type: 0x11             (EXECSTREAM)
   flags: 0x02             (IS_STREAM_MORE)
  msg_id: 0x00_00_00_02    (matches EXEC request)
 payload:

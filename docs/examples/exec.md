@@ -4,30 +4,29 @@ Execute a command inside the guest VM and receive the result.
 
 ## EXEC (Host → Guest)
 
-Command: `ls -la` in `/home/user`, no env vars, 30s timeout.
+Command: `ls -la` in `/work`, no env vars, 120s timeout.
 
 ```
- length: 0x00_00_00_2A   (42 = 6 + 36 payload)
+ length: 0x00_00_00_40   (64 = 6 + 58 body)
    type: 0x10             (EXEC)
   flags: 0x00
  msg_id: 0x00_00_00_02
-payload:
-  string "ls -la"         → 0x0006 "ls -la"
-  string "/home/user"     → 0x000B "/home/user"
-  map<string,string> {}   → 0x0000
-  uint32 30000            → 0x00_00_75_30
+ body: {"command":"ls -la","workdir":"/work","timeout_ms":120000}
 ```
 
 ### Payload Breakdown
 
-| Offset | Bytes | Field | Value |
-|--------|-------|-------|-------|
-| 0 | `00 06` | command length | 6 |
-| 2 | `6c 73 20 2d 6c 61` | command | "ls -la" |
-| 8 | `00 0b` | cwd length | 11 |
-| 10 | `2f 68 6f 6d 65 2f 75 73 65 72` | cwd | "/home/user" |
-| 20 | `00 00` | env entries | 0 |
-| 22 | `00 00 75 30` | timeout_ms | 30000 |
+The body is UTF-8 JSON (58 bytes, no length prefix):
+
+| Field | JSON | Value |
+|-------|------|-------|
+| `command` | `"command":"ls -la"` | `"ls -la"` |
+| `workdir` | `"workdir":"/work"` | `"/work"` |
+| `timeout_ms` | `"timeout_ms":120000` | 120000 (120s) |
+
+`workdir` is always absolute on the wire: core resolves relative paths
+under `/work` and rejects escapes. `env` is omitted here (optional), and
+`spec` is reserved — v1 rejects any non-empty payload.
 
 ## EXEC_RESULT (Guest → Host)
 
@@ -48,26 +47,22 @@ payload:
 ## Go: Sending EXEC
 
 ```go
-var buf bytes.Buffer
-protocol.WriteString(&buf, "ls -la")     // command
-protocol.WriteString(&buf, "/home/user") // cwd
-protocol.WriteStringMap(&buf, nil)       // env
-protocol.WriteUint32(&buf, 30000)        // timeout_ms
-
-frame := &protocol.Frame{
-    Type:    protocol.TypeEXEC,
-    Flags:   0,
-    MsgID:   2,
-    Body:    buf.Bytes(),
-}
-frame.WriteTo(conn)
+timeoutMs := int64(120000)
+body, _ := (&messages.ExecCmd{
+    Command:   "ls -la",
+    Workdir:   "/work",
+    TimeoutMs: &timeoutMs,
+}).MarshalBinary()
+_ = protocol.WriteMVCPFrame(conn, &protocol.Frame{
+    Type: protocol.TypeEXEC, Flags: 0, MsgID: 2, Body: body,
+})
 ```
 
 ## Go: Reading EXEC_RESULT
 
 ```go
-frame, _ := protocol.ReadFrame(conn)
-r := bytes.NewReader(frame.Payload)
+frame, _ := protocol.ReadMVCPFrame(conn)
+r := bytes.NewReader(frame.Body)
 
 exitCode, _  := protocol.ReadInt32(r)   // 0
 stdout, _    := protocol.ReadBytes(r)
@@ -75,7 +70,7 @@ stderr, _    := protocol.ReadBytes(r)
 duration, _  := protocol.ReadUint32(r)  // 5
 ```
 
-## Wire Size Comparison
+## EXEC_RESULT Wire Size Comparison
 
 | Format | Bytes |
 |--------|-------|

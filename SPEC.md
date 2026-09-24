@@ -65,7 +65,7 @@ requirements. Any service can run on any port.
 | `0x00`        | Handshake    | HELLO                                                | all MVCP ports |
 | `0x00`–`0x0F` | Control      | PING, PONG, SHUTDOWN, SHUTDOWN_ACK                   | 9000          |
 | `0x05`–`0x07` | Status       | GET_STATUS, STATUS, HEARTBEAT                        | 9003          |
-| `0x10`–`0x1F` | Execution    | EXEC, EXEC_STREAM, EXEC_RESULT                  | 9000          |
+| `0x10`–`0x1F` | Execution    | EXEC (JSON body), EXECSTREAM, EXECRESULT | 9000          |
 | `0x20`–`0x2F` | File Transfer| XFER_INIT, XFER_CHUNK, XFER_DONE                      | 9004          |
 | `0x30`–`0x3F` | Tools        | TOOL_CALL, TOOL_RESULT, LIST_TOOLS, LIST_TOOLS_RESULT | 9000          |
 | `0x40` | VM Commands  | `SYNC_FILESYSTEMS`                                   | 9000          |

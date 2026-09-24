@@ -13,19 +13,28 @@ streaming, timeouts, error handling).
 
 | Type | Name | Direction | Payload |
 |------|------|-----------|---------|
-| `0x10` | `EXEC` | H→G | `string command`, `string cwd`, `map env`, `uint32 timeout_ms` |
+| `0x10` | `EXEC` | H→G | JSON body: `command` (string), `workdir` (string absoluto), `env` (objeto, opcional), `timeout_ms` (entero positivo, opcional; ausente = default de política; `0`/negativo = `BAD_PAYLOAD`), `spec` (reservado; v1 lo rechaza) |
 | `0x11` | `EXEC_STREAM` | G→H | `uint8 channel`, `uint32 sequence`, `bytes data` |
 | `0x12` | `EXEC_RESULT` | G→H | `int32 exit_code`, `bytes stdout`, `bytes stderr`, `uint32 duration_ms` |
 | `0x13`–`0x1F` | *(reserved)* | — | — |
 
 ## EXEC Request (`0x10`)
 
-| Field | Encoding | Description |
-|-------|----------|-------------|
-| `command` | `string` | Shell command to execute (passed to `/bin/sh -c`) |
-| `cwd` | `string` | Working directory for the command |
-| `env` | `map[string]string` | Environment variables (merged with guest defaults) |
-| `timeout_ms` | `uint32` | Maximum execution time in milliseconds. 0 = no timeout. |
+### EXEC body (JSON)
+
+    {
+      "command": "pytest -q",
+      "workdir": "/work/pkg/foo",
+      "env": {"FOO": "1"},
+      "timeout_ms": 120000
+    }
+
+`workdir` siempre llega absoluto: core resuelve relativos bajo `/work` y
+rechaza escapes; el guest rechaza cualquier path no absoluto o no limpio.
+`spec` es el punto de extensión de `ExecSpec`: v1 no lo emite y el guest
+responde `BAD_PAYLOAD` si viene con payload (fail-closed). `EXECSTREAM`
+(0x11) y `EXEC_RESULT` (0x12) no cambian: exit code, stdout, stderr y
+duración siguen binarios.
 
 ### Flags
 
@@ -135,22 +144,18 @@ lifecycle supervision, observability, and ownership tracking in the vhandler.
 **EXEC** (host → guest):
 
 ```
- length: 0x00_00_00_2A   (42 = 6 + 36 payload)
+ length: 0x00_00_00_40   (64 = 6 + 58 body)
    type: 0x10             (EXEC)
   flags: 0x00
  msg_id: 0x00_00_00_02
-payload:
-  string "ls -la"         → 0x0006 "ls -la"
-  string "/home/user"     → 0x000B "/home/user"
-  map<string,string> {}   → 0x0000
-  uint32 30000            → 0x00_00_75_30
+ body: {"command":"ls -la","workdir":"/work","timeout_ms":120000}
 ```
 
 **EXEC_STREAM** (guest → host), stdout chunk:
 
 ```
- length: 0x00_00_04_12   (1042 = 6 + 9 + 1027 payload)
-   type: 0x11             (EXEC_STREAM)
+ length: 0x00_00_04_0F   (1039 = 6 + 1033 payload)
+   type: 0x11             (EXECSTREAM)
   flags: 0x02             (IS_STREAM_MORE)
  msg_id: 0x00_00_00_02    (matches request)
 payload:
@@ -173,7 +178,7 @@ payload:
   uint32 5                → duration_ms: 5
 ```
 
-**Total wire bytes: ~28.** JSON equivalent: ~230 bytes. ~88% reduction.
+**EXEC_RESULT total wire bytes: ~28.** JSON equivalent: ~230 bytes. ~88% reduction.
 
 ---
 

@@ -77,13 +77,13 @@ processing, so `WANT_ACK`/`MVCP_ACK` stay removed.
 ### Dispatch Acknowledgment (STARTED)
 
 Long-running operations (EXEC, TOOL_CALL) may receive a `STARTED` (type
-`0xFA`) response from the server after it accepts and begins processing
+`0xFA`) notification from the server after it accepts and begins processing
 the request:
 
 ```
 Host → EXEC(msg_id=1, "long_build.sh")           → Guest
 Guest → STARTED(msg_id=1, stream)                → Host   ← "accepted, processing..."
-Guest → EXEC_STDOUT(msg_id=1, MORE)              → Host   ← streaming output
+Guest → EXECSTREAM(msg_id=1, MORE)              → Host   ← streaming output
 Guest → EXEC_RESULT(msg_id=1, IS_RESPONSE)       → Host   ← "done, exit=0"
 ```
 
@@ -116,7 +116,7 @@ Completes a request. The server echoes the request's `msg_id`, sets
 `IS_RESPONSE`, and sends the result type with the response body.
 
 ```
-Guest ── type=0x11 flags=0x01 msg_id=0x01 body=<EXEC_RESULT> ──→ Host
+Guest ── type=0x12 flags=0x01 msg_id=0x01 body=<EXEC_RESULT> ──→ Host
 ```
 
 ### Streaming Response
@@ -128,9 +128,9 @@ file chunks), the server sends multiple frames sharing the same `msg_id`:
 - **Final frame**: clears `IS_STREAM_MORE` and sets `IS_RESPONSE`.
 
 ```
-Guest ── type=0x12 flags=0x02 msg_id=0x01 body=<stdout chunk 1> ──→ Host
-Guest ── type=0x12 flags=0x02 msg_id=0x01 body=<stdout chunk 2> ──→ Host
-Guest ── type=0x11 flags=0x01 msg_id=0x01 body=<EXEC_RESULT>   ──→ Host
+Guest ── type=0x11 flags=0x02 msg_id=0x01 body=<stdout chunk 1> ──→ Host
+Guest ── type=0x11 flags=0x02 msg_id=0x01 body=<stdout chunk 2> ──→ Host
+Guest ── type=0x12 flags=0x01 msg_id=0x01 body=<EXEC_RESULT>   ──→ Host
 ```
 
 Streaming requests (host→guest) follow the same pattern with roles
@@ -252,7 +252,7 @@ type Response struct {
 }
 
 type StreamFrame struct {
-    Type uint8  // chunk type (e.g. EXEC_STDOUT) or result type
+    Type uint8  // chunk type (e.g. EXECSTREAM) or result type
     Body []byte // chunk or result payload
     More bool   // true if IS_STREAM_MORE was set
 }
@@ -324,10 +324,10 @@ Host (Client)                         Guest (Server)
     │── EXEC(msg_id=1, flags=0) ──────────→│
     │                                       │ handler(ctx, req)
     │                                       │ go run command
-    │←── EXEC_STDOUT(msg_id=1, MORE) ──────│ req.Stream(EXEC_STDOUT, data)
-    │←── EXEC_STDERR(msg_id=1, MORE) ──────│ req.Stream(EXEC_STDERR, data)
-    │←── EXEC_STDOUT(msg_id=1, MORE) ──────│ req.Stream(EXEC_STDOUT, data)
-    │←── EXEC_RESULT(msg_id=1, RESPONSE) ──│ req.StreamEnd(EXEC_RESULT, result)
+    │←── EXECSTREAM(msg_id=1, MORE, ch=0x00)  │ req.Stream(EXECSTREAM, data)
+    │←── EXECSTREAM(msg_id=1, MORE, ch=0x01)  │ req.Stream(EXECSTREAM, data)
+    │←── EXECSTREAM(msg_id=1, MORE, ch=0x00)  │ req.Stream(EXECSTREAM, data)
+    │←── EXECRESULT(msg_id=1, RESPONSE)       │ req.StreamEnd(EXECRESULT, result)
     │                                       │
 ```
 
@@ -356,7 +356,7 @@ Host (Client)                         Guest (Server)
 
 **Response** (guest → host):
 ```
- length: 0x00_00_00_22   (6 + 28 payload)
+ length: 0x00_00_00_12   (18 = 6 + 12 payload)
    type: 0x06             (STATUS)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_01    (matches)
@@ -370,31 +370,29 @@ Host (Client)                         Guest (Server)
 
 **Request** (host → guest):
 ```
- length: 0x00_00_00_2A   (6 + 36 payload)
+ length: 0x00_00_00_40   (64 = 6 + 58 body)
    type: 0x10             (EXEC)
   flags: 0x00
  msg_id: 0x00_00_00_02
-   body:
-    string "ls -la"       → 0x0006 + "ls -la"
-    string "/home/user"   → 0x000B + "/home/user"
-    map<string,string> {} → 0x0000
-    uint32 30000          → 0x00_00_75_30
+   body: {"command":"ls -la","workdir":"/work","timeout_ms":120000}
 ```
 
 **Stream chunk** (guest → host):
 ```
- length: 0x00_00_00_1A   (6 + 20 payload)
-   type: 0x12             (EXEC_STDOUT)
+ length: 0x00_00_00_12   (18 = 6 + 12 payload)
+   type: 0x11             (EXECSTREAM)
   flags: 0x02             (IS_STREAM_MORE)
  msg_id: 0x00_00_00_02    (matches)
    body:
-    bytes [data]          → uint32 len + data
+    uint8 0x00            → channel (stdout)
+    uint32 0              → sequence
+    bytes "ok\n"          → uint32 len + data
 ```
 
 **Final response** (guest → host):
 ```
- length: 0x00_00_00_1A   (6 + 20 payload)
-   type: 0x11             (EXEC_RESULT)
+ length: 0x00_00_00_16   (22 = 6 + 16 payload)
+   type: 0x12             (EXECRESULT)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_02    (matches)
    body:
@@ -408,7 +406,7 @@ Host (Client)                         Guest (Server)
 
 **Response** (guest → host):
 ```
- length: 0x00_00_00_16   (6 + 16 payload)
+ length: 0x00_00_00_1B   (27 = 6 + 21 payload)
    type: 0xFE             (ERROR)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_02    (matches request)
