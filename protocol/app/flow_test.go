@@ -287,3 +287,156 @@ func TestHalfCloseDeliversEOFThenPeerCanReply(t *testing.T) {
 		t.Fatalf("reply = %q", buf)
 	}
 }
+
+// encodeOpen builds an APP_OPEN body by hand so a test can carry an
+// oversized meta that MarshalBinary would refuse.
+func encodeOpen(t *testing.T, streamID uint32, service string, meta []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	protocol.WriteUint32(&buf, streamID)
+	protocol.WriteString(&buf, service)
+	protocol.WriteBytes(&buf, meta)
+	return buf.Bytes()
+}
+
+func TestInvalidAppOpenRejected(t *testing.T) {
+	cases := map[string][]byte{
+		"bad service":    encodeOpen(t, 0x80000001, "Bad", nil),
+		"oversized meta": encodeOpen(t, 0x80000002, "svc", make([]byte, protocol.AppMaxMetaBytes+1)),
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			serverConn, clientConn := net.Pipe()
+			session := NewSession(serverConn, Config{Role: RoleHost, Handler: handlerFunc(
+				func(context.Context, string, []byte) (Endpoint, []byte, error) {
+					t.Error("handler must not run for an invalid APP_OPEN")
+					return nil, nil, errors.New("unused")
+				})})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() { _ = session.Serve(ctx) }()
+			defer session.Close()
+
+			if err := protocol.WriteMVCPFrame(clientConn, &protocol.Frame{Type: protocol.TypeAPPOPEN, Body: body}); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			frame, err := protocol.ReadMVCPFrame(clientConn)
+			if err != nil {
+				t.Fatalf("read reject: %v", err)
+			}
+			if frame.Type != protocol.TypeAPPREJECT {
+				t.Fatalf("frame type = 0x%02X, want APP_REJECT", frame.Type)
+			}
+			var rej messages.AppReject
+			if err := rej.UnmarshalBinary(frame.Body); err != nil {
+				t.Fatalf("decode reject: %v", err)
+			}
+			if rej.Code != protocol.ErrorCodeAppProtocolError {
+				t.Fatalf("reject code = 0x%04X, want PROTOCOL_ERROR", rej.Code)
+			}
+		})
+	}
+}
+
+func TestOversizedAcceptMetaResets(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	session := NewSession(serverConn, Config{Role: RoleHost, Handler: handlerFunc(
+		func(context.Context, string, []byte) (Endpoint, []byte, error) {
+			return nil, nil, errors.New("no inbound streams in this test")
+		})})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = session.Serve(ctx) }()
+	defer session.Close()
+
+	openErr := make(chan error, 1)
+	go func() {
+		_, err := session.Open(ctx, "svc", nil)
+		openErr <- err
+	}()
+
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	frame, err := protocol.ReadMVCPFrame(clientConn)
+	if err != nil {
+		t.Fatalf("read APP_OPEN: %v", err)
+	}
+	var open messages.AppOpen
+	if err := open.UnmarshalBinary(frame.Body); err != nil {
+		t.Fatalf("decode open: %v", err)
+	}
+	var buf bytes.Buffer
+	protocol.WriteUint32(&buf, open.StreamID)
+	protocol.WriteBytes(&buf, make([]byte, protocol.AppMaxMetaBytes+1))
+	protocol.WriteUint32(&buf, protocol.AppInitialWindow)
+	if err := protocol.WriteMVCPFrame(clientConn, &protocol.Frame{Type: protocol.TypeAPPACCEPT, Body: buf.Bytes()}); err != nil {
+		t.Fatalf("write accept: %v", err)
+	}
+	frame, err = protocol.ReadMVCPFrame(clientConn)
+	if err != nil {
+		t.Fatalf("read APP_RESET: %v", err)
+	}
+	if frame.Type != protocol.TypeAPPRESET {
+		t.Fatalf("frame type = 0x%02X, want APP_RESET", frame.Type)
+	}
+	var rst messages.AppReset
+	if err := rst.UnmarshalBinary(frame.Body); err != nil {
+		t.Fatalf("decode reset: %v", err)
+	}
+	if rst.Code != protocol.ErrorCodeAppProtocolError {
+		t.Fatalf("reset code = 0x%04X, want PROTOCOL_ERROR", rst.Code)
+	}
+	select {
+	case err := <-openErr:
+		var reset *ResetError
+		if !errors.As(err, &reset) {
+			t.Fatalf("Open err = %v, want ResetError", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Open did not return after oversized ACCEPT meta")
+	}
+}
+
+func TestOversizedDataResets(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	session := NewSession(serverConn, Config{Role: RoleHost, Handler: handlerFunc(
+		func(context.Context, string, []byte) (Endpoint, []byte, error) {
+			ep, _ := newPipeEndpoint()
+			return ep, nil, nil
+		})})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = session.Serve(ctx) }()
+	defer session.Close()
+
+	if err := protocol.WriteMVCPFrame(clientConn, &protocol.Frame{
+		Type: protocol.TypeAPPOPEN,
+		Body: mustMarshal(t, &messages.AppOpen{StreamID: 0x80000001, Service: "svc"}),
+	}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := protocol.ReadMVCPFrame(clientConn); err != nil { // ACCEPT
+		t.Fatalf("accept: %v", err)
+	}
+	var buf bytes.Buffer
+	protocol.WriteUint32(&buf, 0x80000001)
+	protocol.WriteBytes(&buf, make([]byte, protocol.AppMaxDataBytes+1))
+	if err := protocol.WriteMVCPFrame(clientConn, &protocol.Frame{Type: protocol.TypeAPPDATA, Body: buf.Bytes()}); err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	frame, err := protocol.ReadMVCPFrame(clientConn)
+	if err != nil {
+		t.Fatalf("read reset: %v", err)
+	}
+	if frame.Type != protocol.TypeAPPRESET {
+		t.Fatalf("frame type = 0x%02X, want APP_RESET", frame.Type)
+	}
+	var rst messages.AppReset
+	if err := rst.UnmarshalBinary(frame.Body); err != nil {
+		t.Fatalf("decode reset: %v", err)
+	}
+	if rst.Code != protocol.ErrorCodeAppProtocolError {
+		t.Fatalf("reset code = 0x%04X, want PROTOCOL_ERROR", rst.Code)
+	}
+}

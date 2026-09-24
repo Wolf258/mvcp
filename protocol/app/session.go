@@ -271,7 +271,7 @@ func (s *Session) handleFrame(ctx context.Context, f *protocol.Frame) error {
 }
 
 func (s *Session) handleOpen(ctx context.Context, m *messages.AppOpen) {
-	if m.StreamID == 0 || m.StreamID&0x80000000 != s.remoteBit() || !protocol.ValidAppService(m.Service) {
+	if m.StreamID == 0 || m.StreamID&0x80000000 != s.remoteBit() || !protocol.ValidAppService(m.Service) || len(m.Meta) > protocol.AppMaxMetaBytes {
 		s.sendReject(m.StreamID, protocol.ErrorCodeAppProtocolError, "invalid APP_OPEN")
 		return
 	}
@@ -347,6 +347,10 @@ func (s *Session) handleAccept(m *messages.AppAccept) {
 	st := s.stream(m.StreamID)
 	if st == nil {
 		return // normal race after reset/close: ignore
+	}
+	if len(m.Meta) > protocol.AppMaxMetaBytes {
+		st.resetRemote(protocol.ErrorCodeAppProtocolError, "accept meta too large")
+		return
 	}
 	if m.Grant == 0 || m.Grant > protocol.AppMaxCredit {
 		st.resetRemote(protocol.ErrorCodeAppProtocolError, "invalid accept grant")

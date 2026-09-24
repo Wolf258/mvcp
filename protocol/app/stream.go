@@ -288,6 +288,10 @@ func (st *Stream) deliver(data []byte) {
 	if len(data) == 0 {
 		return // empty APP_DATA is a no-op (never produces a 0-byte Read)
 	}
+	if len(data) > protocol.AppMaxDataBytes {
+		st.resetRemote(protocol.ErrorCodeAppProtocolError, "data frame too large")
+		return
+	}
 	st.mu.Lock()
 	if st.accepting || st.opening {
 		st.mu.Unlock()
