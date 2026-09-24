@@ -26,6 +26,10 @@ const (
 	RoleGuest Role = 1
 )
 
+// maxLocalStreamID bounds the per-direction 31-bit stream_id space
+// (bit 31 is the initiator). IDs are never reused within a connection.
+const maxLocalStreamID uint32 = 0x7FFFFFFF
+
 // Endpoint is the local side of one stream.
 type Endpoint interface {
 	io.Reader
@@ -76,8 +80,9 @@ func (e *ResetError) Error() string {
 }
 
 var (
-	ErrSessionClosed = errors.New("app: session closed")
-	ErrStreamClosed  = errors.New("app: stream closed")
+	ErrSessionClosed     = errors.New("app: session closed")
+	ErrStreamClosed      = errors.New("app: stream closed")
+	ErrStreamIDExhausted = errors.New("app: stream id space exhausted")
 )
 
 // ErrorName returns the short code name used by the guest control socket
@@ -401,6 +406,10 @@ func (s *Session) Open(ctx context.Context, service string, meta []byte) (*Strea
 	if len(s.streams) >= protocol.AppMaxStreams {
 		s.mu.Unlock()
 		return nil, &RejectError{Code: protocol.ErrorCodeAppQuotaExceeded, Message: "stream quota exceeded"}
+	}
+	if s.nextID >= maxLocalStreamID {
+		s.mu.Unlock()
+		return nil, ErrStreamIDExhausted
 	}
 	s.nextID++
 	id := s.localBit() | s.nextID

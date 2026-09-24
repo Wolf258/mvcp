@@ -236,6 +236,26 @@ func TestMaxStreamsRejected(t *testing.T) {
 	}
 }
 
+func TestOpenFailsWhenStreamIDSpaceExhausted(t *testing.T) {
+	// Stream IDs are never reused within a connection (app-channel.md),
+	// so an exhausted 31-bit local space must fail the open instead of
+	// handing out an ID that collides with the peer's range.
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+	go func() { _, _ = io.Copy(io.Discard, c1) }() // drain APP_OPEN/APP_RESET if sent
+	s := NewSession(c1, Config{Role: RoleHost})
+	s.mu.Lock()
+	s.nextID = maxLocalStreamID
+	s.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Open must fail before it starts waiting for APP_ACCEPT
+	_, err := s.Open(ctx, "svc", nil)
+	if !errors.Is(err, ErrStreamIDExhausted) {
+		t.Fatalf("Open err = %v, want ErrStreamIDExhausted", err)
+	}
+}
+
 func mustMarshal(t *testing.T, m interface{ MarshalBinary() ([]byte, error) }) []byte {
 	t.Helper()
 	body, err := m.MarshalBinary()
