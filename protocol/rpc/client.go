@@ -10,33 +10,62 @@ import (
 	"github.com/Wolf258/mvcp/protocol"
 )
 
+// pendingCall routes stream frames from the read loop to one consumer
+// without ever dropping frames: the read loop blocks when the forwarder
+// is stalled, which stops reading from the connection and propagates
+// backpressure to the peer (05-concurrency.md). The consumer channel
+// (out) is closed by the forwarder after the final frame or when the
+// caller abandons the call (done). inbox is never closed, so a sender
+// can never panic on a closed channel.
 type pendingCall struct {
-	mu     sync.Mutex
-	stream chan *StreamFrame
-	closed bool
+	inbox chan *StreamFrame
+	out   chan *StreamFrame
+	done  chan struct{}
+	once  sync.Once
 }
 
-func (p *pendingCall) closeStream() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if !p.closed {
-		p.closed = true
-		close(p.stream)
+func newPendingCall() *pendingCall {
+	p := &pendingCall{
+		inbox: make(chan *StreamFrame, 16),
+		out:   make(chan *StreamFrame, 16),
+		done:  make(chan struct{}),
 	}
+	go func() {
+		defer close(p.out)
+		for {
+			select {
+			case f := <-p.inbox:
+				select {
+				case p.out <- f:
+				case <-p.done:
+					return
+				}
+				if !f.More {
+					return // final frame forwarded: close out
+				}
+			case <-p.done:
+				return
+			}
+		}
+	}()
+	return p
 }
 
+// send blocks until the frame is accepted by the forwarder or the call
+// is abandoned. It never silently discards.
 func (p *pendingCall) send(f *StreamFrame) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		return false
-	}
 	select {
-	case p.stream <- f:
+	case p.inbox <- f:
 		return true
-	default:
+	case <-p.done:
 		return false
 	}
+}
+
+// finish abandons the call: further sends stop, the forwarder exits and
+// out is closed by the forwarder.
+func (p *pendingCall) finish() {
+	p.once.Do(func() { close(p.done) })
 }
 
 type Client struct {
@@ -90,7 +119,7 @@ func (c *Client) shutdown() {
 		c.cancel()
 	}
 	for _, p := range c.pending {
-		p.closeStream()
+		p.finish()
 	}
 	c.pending = make(map[uint32]*pendingCall)
 	c.mu.Unlock()
@@ -122,7 +151,7 @@ func (c *Client) allocMsgID() uint32 {
 }
 
 func (c *Client) addPending(msgID uint32) *pendingCall {
-	p := &pendingCall{stream: make(chan *StreamFrame, 16)}
+	p := newPendingCall()
 	c.mu.Lock()
 	c.pending[msgID] = p
 	c.mu.Unlock()
@@ -178,12 +207,25 @@ func (c *Client) readLoop(ctx context.Context) {
 
 		if frame.Flags&protocol.FlagResponse != 0 {
 			p.send(&StreamFrame{Type: frame.Type, Body: frame.Body, More: false})
-			p.closeStream()
 			c.removePending(frame.MsgID)
 			continue
 		}
 
 		p.send(&StreamFrame{Type: frame.Type, Body: frame.Body, More: true})
+	}
+}
+
+func (c *Client) receive(ctx context.Context, p *pendingCall) (*StreamFrame, error) {
+	select {
+	case frame, ok := <-p.out:
+		if !ok {
+			return nil, errors.New("mvcp rpc: call closed")
+		}
+		return frame, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.closeCh:
+		return nil, errors.New("mvcp rpc: client closed")
 	}
 }
 
@@ -195,7 +237,7 @@ func (c *Client) CallFlags(ctx context.Context, msgType uint8, flags uint8, body
 	msgID := c.allocMsgID()
 	p := c.addPending(msgID)
 	defer func() {
-		p.closeStream()
+		p.finish()
 		c.removePending(msgID)
 	}()
 
@@ -203,32 +245,17 @@ func (c *Client) CallFlags(ctx context.Context, msgType uint8, flags uint8, body
 		return nil, err
 	}
 
-	select {
-	case frame := <-p.stream:
-		if frame == nil {
-			return nil, errors.New("mvcp rpc: connection closed")
-		}
-		if frame.Type == protocol.TypeSTARTED {
-			goto waitResponse
-		}
-		return &Response{Type: frame.Type, Body: frame.Body}, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-c.closeCh:
-		return nil, errors.New("mvcp rpc: client closed")
+	frame, err := c.receive(ctx, p)
+	if err != nil {
+		return nil, err
 	}
-waitResponse:
-	select {
-	case frame := <-p.stream:
-		if frame == nil {
-			return nil, errors.New("mvcp rpc: connection closed")
+	if frame.Type == protocol.TypeSTARTED {
+		frame, err = c.receive(ctx, p)
+		if err != nil {
+			return nil, err
 		}
-		return &Response{Type: frame.Type, Body: frame.Body}, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-c.closeCh:
-		return nil, errors.New("mvcp rpc: client closed")
 	}
+	return &Response{Type: frame.Type, Body: frame.Body}, nil
 }
 
 func (c *Client) Stream(ctx context.Context, msgType uint8, body []byte) (<-chan *StreamFrame, error) {
@@ -240,21 +267,21 @@ func (c *Client) StreamFlags(ctx context.Context, msgType uint8, flags uint8, bo
 	p := c.addPending(msgID)
 
 	if err := c.writeRequest(msgID, msgType, flags, body); err != nil {
+		p.finish()
 		c.removePending(msgID)
-		p.closeStream()
 		return nil, err
 	}
 
 	go func() {
 		select {
 		case <-ctx.Done():
-			p.closeStream()
+			p.finish()
 			c.removePending(msgID)
 		case <-c.closeCh:
-			p.closeStream()
+			p.finish()
 			c.removePending(msgID)
 		}
 	}()
 
-	return p.stream, nil
+	return p.out, nil
 }
