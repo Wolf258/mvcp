@@ -33,7 +33,7 @@ under `/work` and rejects escapes. `env` is omitted here (optional), and
 Command succeeded (exit 0), empty stdout/stderr, took 5ms.
 
 ```
- length: 0x00_00_00_1C   (28 = 6 + 22 payload)
+ length: 0x00_00_00_16   (22 = 6 + 16 payload)
    type: 0x12             (EXEC_RESULT)
   flags: 0x01             (IS_RESPONSE)
  msg_id: 0x00_00_00_02    (matches request)
