@@ -68,7 +68,9 @@ the opener its window (`grant`). Default initial window: 256 KiB.
 
 ## Guest contract (vhandler)
 
-Unix sockets 0600 under `/run/shifty/app/`; no network, no ports.
+Unix sockets under `/run/shifty/app/`; no network, no ports. vhandler
+creates `control.sock` as 0600 and the 0700 parent directory; each
+service owns `<service_id>.sock` (recommended 0600).
 
 - Host→guest: vhandler dials `/run/shifty/app/<service_id>.sock` per
   stream; only services declared in the VM manifest are routed.

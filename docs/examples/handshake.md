@@ -8,7 +8,7 @@ contract — HELLO layout, validation limits, capability table,
 negotiation algorithm, per-port requirements, and timeout — lives in
 [06-negotiation.md](../06-negotiation.md).
 
-## MVCP Handshake (ports 9000, 9002, 9003, 9004)
+## MVCP Handshake (ports 9000, 9002, 9003, 9004, 9005)
 
 ### 1. Wire prefix (5 bytes, Guest → Host)
 
@@ -76,7 +76,7 @@ if magic != "VPP" || version != 0x01 {
   ERROR frame. Post-acceptance failures (unexpected role, malformed
   HELLO, unsatisfied requirements) close **with** an ERROR frame.
 - The handshake is performed on every connection, including ports
-  9002, 9003, and 9004; each connection negotiates independently.
+  9002, 9003, 9004, and 9005; each connection negotiates independently.
 - The magic string tells the peer which protocol to speak:
   `"MVCP"` → MVCP message dispatch (type+flags+msg_id).
   `"VPP"`  → VPP frame dispatch (type-only).

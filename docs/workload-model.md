@@ -260,7 +260,8 @@ VM BOOT
    │       ├── Port 9001: VPP console
    │       ├── Port 9002: Events
    │       ├── Port 9003: Status (heartbeat + query)
-│       └── Port 9004: File Transfer
+│       ├── Port 9004: File Transfer
+│       └── Port 9005: App channel
    │
    └── 4. Agent connects → spawns processes → tools → disconnect
 ```

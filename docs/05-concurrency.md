@@ -44,7 +44,8 @@ independently (e.g. one connection per agent conversation).
 
 ## One-Way Messages
 
-Ports 9002 (events), 9003 (status), and 9004 (file transfer) use
+Ports 9002 (events), 9003 (status), 9004 (file transfer), and 9005 (app
+channel) use
 MVCP directly without the RPC layer. Events are fire-and-forget
 (`msg_id=0`). File transfer uses `STARTED` (`0xFA`) for handler
 confirmation. Heartbeat (`msg_id=0`) remains fire-and-forget

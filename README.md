@@ -62,6 +62,7 @@ mvcp/
 | [docs/services/heartbeat.md](docs/services/heartbeat.md) | Heartbeat: periodic liveness | MVCP |
 | [docs/services/execution.md](docs/services/execution.md) | Execution: EXEC, streaming stdout/stderr | MVCP |
 | [docs/services/file-transfer.md](docs/services/file-transfer.md) | File transfer: chunked export/import | MVCP |
+| [docs/services/app-channel.md](docs/services/app-channel.md) | App channel: multiplexed app-to-app byte streams (port 9005) | MVCP |
 | [docs/services/filesystem.md](docs/services/filesystem.md) | *(Obsolete)* Superseded by Tools | MVCP |
 | [docs/services/tools.md](docs/services/tools.md) | Tools: generic TOOL_CALL, read_file/write_file/bash/glob/grep | MVCP |
 | [docs/services/vm-commands.md](docs/services/vm-commands.md) | VM-specific operations (`SYNC_FILESYSTEMS`) | MVCP |
