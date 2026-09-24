@@ -117,7 +117,8 @@ to confirm it accepted the request for processing. Unlike the former
 has begun processing (process spawned, file opened).
 
 - `STARTED` carries a single `bool stream` field (`EncodeStarted`).
-- The frame uses `IS_RESPONSE` with the matching `msg_id`.
+- The frame uses `flags=0x00` with the matching `msg_id`: `STARTED` is a
+  notification, not a response, so it never sets `IS_RESPONSE`.
 - If the handler cannot start, it sends `ERROR` (`0xFE`) instead.
 
 See [services/rpc.md](services/rpc.md) for the full `STARTED` life-cycle

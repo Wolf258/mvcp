@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Protocol payloads & fixes
+
+- `EXEC 0x10` body is now strict JSON (`command`, `workdir`, `env`,
+  `timeout_ms`, reserved `spec`); `EXECSTREAM`/`EXECRESULT` stay binary.
+- `STARTED` documented as `flags=0` acceptance notification.
+
 ### Removed in-guest diagnostic CLI (`shiftyctl`) and `RoleCLI`
 
 - **`RoleCLI` removed from the peer-role enum**: valid roles are now
@@ -28,9 +34,10 @@
 - **Docs updated**: `docs/05-concurrency.md`, `docs/services/rpc.md`,
   `SPEC.md`, `docs/01-transport.md`, `docs/services/tools.md`,
   `README.md`.
-- **Implementation follow-ups**: multiplexed writes need atomic per-frame
-  writes, and slow stream consumers need backpressure (no silent frame
-  drops). Both remain open in the Go implementation.
+- **Implementation follow-ups**: multiplexed writes still need atomic
+  per-frame writes on the shared RPC client. Slow stream consumers are now
+  correct: the read loop blocks and backpressure reaches the peer
+  (no silent frame drops).
 
 ### Handshake & capability negotiation
 

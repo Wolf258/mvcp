@@ -63,9 +63,16 @@ well-defined semantics for each message role:
 | **Response**     | result type       | `IS_RESPONSE` (`0x01`)              | matches request          |
 | **Stream chunk** | chunk type        | `IS_STREAM_MORE` (`0x02`)           | matches request          |
 | **Stream end**   | result type       | `IS_RESPONSE` (`0x01`)             | matches request          |
-| **Started**      | `0xFA`            | `IS_RESPONSE` (`0x01`)             | matches request          |
+| **Started**      | `0xFA`            | `0x00`                               | matches request          |
 | **Error**        | `0xFE`            | `IS_RESPONSE` (`0x01`)             | matches request          |
 | **One-way**      | event type        | `0x00`                               | `0`                      |
+
+`STARTED` is an acceptance notification, not a response: it carries
+`flags=0` and the request's `msg_id`, and it is NOT the end of the call.
+`rpc.Client.Call` skips it and waits for the final frame; `rpc.Client.Stream`
+delivers it as the first frame (consumers can identify it by `type`). There
+is no per-frame ack: vsock is ordered and the final response confirms
+processing, so `WANT_ACK`/`MVCP_ACK` stay removed.
 
 ### Dispatch Acknowledgment (STARTED)
 
@@ -75,7 +82,7 @@ the request:
 
 ```
 Host → EXEC(msg_id=1, "long_build.sh")           → Guest
-Guest → STARTED(msg_id=1, IS_RESPONSE, stream)   → Host   ← "accepted, processing..."
+Guest → STARTED(msg_id=1, stream)                → Host   ← "accepted, processing..."
 Guest → EXEC_STDOUT(msg_id=1, MORE)              → Host   ← streaming output
 Guest → EXEC_RESULT(msg_id=1, IS_RESPONSE)       → Host   ← "done, exit=0"
 ```
