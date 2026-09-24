@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### App channel (port 9005)
+
+- New capability `AppChannel` (0x06, rev 1) and `APP_*` wire family
+  (0x50–0x56): one persistent connection per VM with byte streams
+  multiplexed by `stream_id`, credit flow control (256 KiB window,
+  4× outstanding cap, 1 MiB send queue) and half-close.
+- Guest bridge: declared services expose `/run/shifty/app/<id>.sock`;
+  guest-initiated opens go through `/run/shifty/app/control.sock`
+  (NDJSON header, then a raw byte pipe).
+- Host bridge: core dials 9005 at VM watch, reconnects with backoff,
+  authorizes every open (default deny-all) and audits open/deny/close
+  with byte counters, never payloads.
+
 ### Protocol payloads & fixes
 
 - `EXEC 0x10` body is now strict JSON (`command`, `workdir`, `env`,

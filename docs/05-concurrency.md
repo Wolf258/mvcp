@@ -50,6 +50,24 @@ MVCP directly without the RPC layer. Events are fire-and-forget
 confirmation. Heartbeat (`msg_id=0`) remains fire-and-forget
 with no ack.
 
+## App Channel Streams (port 9005)
+
+The app channel multiplexes independent byte streams over one MVCP
+connection, correlated by `stream_id` (not `msg_id`), with `flags=0`:
+
+- Either side may open streams (`APP_OPEN`/`APP_ACCEPT`/`APP_REJECT`).
+- Flow control is per stream and per direction: credit is granted in
+  bytes and returned as the local endpoint consumes data. A sender
+  queues up to 1 MiB per stream; overflow resets the stream with
+  `APP_RESET(OVERFLOW)` — never silent loss.
+- `APP_CLOSE` is a half-close: the peer sees EOF but can still send
+  data back until it also closes.
+- Connection loss or VM stop resets every stream with an explicit
+  reason (`APP_RESET(PEER_GONE)`), never an ambiguous EOF.
+
+See [services/app-channel.md](services/app-channel.md) for the wire
+contract, limits and lifecycle.
+
 ## Connection Lifecycle
 
 | Event | Behavior |

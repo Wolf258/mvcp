@@ -91,6 +91,14 @@ length  = 1 + M
 
 See [services/console.md](services/console.md) for the full VPP specification.
 
+### App Channel Types (port 9005)
+
+The app channel adds `APP_OPEN 0x50`, `APP_ACCEPT 0x51`,
+`APP_REJECT 0x52`, `APP_DATA 0x53`, `APP_CREDIT 0x54`,
+`APP_CLOSE 0x55` and `APP_RESET 0x56`. All of them use `flags=0` and
+`msg_id=0`; correlation is by `stream_id` inside the body. See
+[services/app-channel.md](services/app-channel.md).
+
 ## Flags (MVCP only)
 
 | Bit          | Name              | Meaning                                                                                            |

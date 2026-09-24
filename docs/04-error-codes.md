@@ -28,6 +28,15 @@ Direction: both host-to-guest and guest-to-host.
 | `0x000A` | `TOOL_FAILED` | Tool executed but returned an error (details in error_msg) |
 | `0x000B` | `UNEXPECTED_ROLE` | Handshake: peer role not accepted by this endpoint |
 | `0x000C` | `NO_COMMON_CAPABILITY` | Handshake: a required capability is missing or has no common revision (details in error_msg) |
+| `0x0020` | `APP_SERVICE_NOT_FOUND` | App channel: service does not exist or is not declared |
+| `0x0021` | `APP_NOT_AUTHORIZED` | App channel: core policy or manifest denied the open |
+| `0x0022` | `APP_SERVICE_BUSY` | App channel: the endpoint does not accept more streams |
+| `0x0023` | `APP_QUOTA_EXCEEDED` | App channel: stream or memory quota exceeded |
+| `0x0024` | `APP_PEER_GONE` | App channel: VM/plugin/connection went away |
+| `0x0025` | `APP_OVERFLOW` | App channel: local send queue exceeded |
+| `0x0026` | `APP_TIMEOUT` | App channel: endpoint operation timed out |
+| `0x0027` | `APP_PROTOCOL_ERROR` | App channel: credit/state contract violated |
+| `0x0028` | `APP_LOCAL_ERROR` | App channel: endpoint internal failure |
 
 Handshake errors use `msg_id = 0` (echoing HELLO) and `IS_RESPONSE`.
 `BAD_VERSION` (0x0008) remains defined but unused: wire version

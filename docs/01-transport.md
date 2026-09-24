@@ -18,7 +18,7 @@ long as both sides agree.
 ├──────────────────────┬───────────────────────────────┤
 │ MVCP wire format     │ VPP wire format               │
 │ type+flags+msg_id(6B)│ type(1B)                      │
-│ ports 9000/9002/9003/9004 │ port 9001                     │
+│ ports 9000/9002/9003/9004/9005 │ port 9001                     │
 ├──────────────────────┴───────────────────────────────┤
 │ TRANSPORT (shared by all ports)                       │
 │ ReadFrame / WriteFrame — length(4B BE) + payload      │
@@ -76,6 +76,7 @@ to amortise the fixed header cost.
 | 9002 | Events       | MVCP     | Guest → Host         |
 | 9003 | Status       | MVCP     | Bidirectional        |
 | 9004 | File Transfer| MVCP     | Host-initiated, bidir|
+| 9005 | App Channel  | MVCP     | Bidirectional (either side opens streams) |
 
 These are conventions. The protocol places no constraints on port
 numbers. An implementation may re-map services to different ports.
@@ -121,7 +122,7 @@ The host connects to Firecracker's per-VM vsock Unix socket:
 
 ## Guest-Side Transport (Shifty)
 
-1. Open `AF_VSOCK` `SOCK_STREAM` listeners on ports 9000–9004
+1. Open `AF_VSOCK` `SOCK_STREAM` listeners on ports 9000–9005
 2. `Accept()` connection
 3. Immediately write wire prefix + HELLO (see below)
 4. Enter `ReadFrame` / dispatch loop
@@ -133,7 +134,7 @@ Every connection starts with a **wire prefix** sent by the guest agent
 negotiates identity and capabilities. The magic string tells the host
 which protocol to speak on this connection.
 
-### MVCP handshake (ports 9000, 9002, 9003, 9004)
+### MVCP handshake (ports 9000, 9002, 9003, 9004, 9005)
 
 ```
 ┌─────────────────┬─────────┐

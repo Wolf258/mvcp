@@ -57,6 +57,7 @@ requirements. Any service can run on any port.
 | 9002 | Events       | MVCP           | Guest → Host           |
 | 9003 | Status       | MVCP           | Bidirectional          |
 | 9004 | File Transfer| MVCP           | Host-initiated, bidir  |
+| 9005 | App Channel  | MVCP (no RPC)  | Bidirectional, either side may open streams |
 
 ### Message Categories (MVCP)
 
@@ -71,6 +72,7 @@ requirements. Any service can run on any port.
 | `0x40` | VM Commands  | `SYNC_FILESYSTEMS`                                   | 9000          |
 | `0x41` | VM Commands  | `SYNC_FILESYSTEMS_ACK`                               | 9000          |
 | `0x42`–`0x4F` | VM Commands  | *(reserved)*                                  | —             |
+| `0x50`–`0x56` | App channel  | APP_OPEN, APP_ACCEPT, APP_REJECT, APP_DATA, APP_CREDIT, APP_CLOSE, APP_RESET | 9005 |
 | `0x80`–`0x8F` | Events       | EVENT_READY, EVENT_FILE_RECEIVED, EVENT_MOUNT, EVENT_ERROR, EVENT_LOG, EVENT_INIT_FAILED | 9002 |
 | `0xFA`        | STARTED      | STARTED                                            | 9000/9004     |
 | `0xFE`        | Error        | ERROR                                               | 9000/9004     |
@@ -102,6 +104,7 @@ requirements. Any service can run on any port.
 | [docs/services/vm-commands.md](docs/services/vm-commands.md)   | VM-specific control operations (`SYNC_FILESYSTEMS`)             |
 | [docs/workload-model.md](docs/workload-model.md)               | Workload model: tools vs processes vs services, lifecycles, ownership, cleanup |
 | [docs/services/file-transfer.md](docs/services/file-transfer.md)| Port 9004: Chunked file export/import — dedicated data plane, not part of RPC layer          |
+| [docs/services/app-channel.md](docs/services/app-channel.md)   | Port 9005: App channel — multiplexed byte streams with credits, guest/host bridges           |
 | [docs/services/filesystem.md](docs/services/filesystem.md)     | *(Obsolete)* Superseded by Tools service on port 9000                                           |
 | [docs/services/tools.md](docs/services/tools.md)               | Port 9000: LLM tools — generic TOOL_CALL dispatch, `read_file`/`write_file`/`bash`/`glob`/`grep`/`edit_file` |
 

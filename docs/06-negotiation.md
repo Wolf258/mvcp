@@ -1,7 +1,7 @@
 # 06 — Handshake & Capability Negotiation
 
 **Status**: design contract. Replaces the fire-and-forget magic+version
-handshake on MVCP ports (9000, 9002, 9003, 9004). Code implementation
+handshake on MVCP ports (9000, 9002, 9003, 9004, 9005). Code implementation
 is tracked separately; this document is the normative design.
 
 ## 1. Goals
@@ -21,7 +21,7 @@ is tracked separately; this document is the normative design.
 The handshake prefix stays unchanged:
 
 ```
-MVCP:  "MVCP" + 0x01   (5 bytes, ports 9000/9002/9003/9004)
+MVCP:  "MVCP" + 0x01   (5 bytes, ports 9000/9002/9003/9004/9005)
 VPP:   "VPP"  + 0x01   (4 bytes, port 9001)
 ```
 
@@ -123,6 +123,7 @@ const (
     CapabilityEvents       CapabilityID = 0x03
     CapabilityFileTransfer CapabilityID = 0x04
     CapabilitySyncFS       CapabilityID = 0x05
+    CapabilityAppChannel   CapabilityID = 0x06
 )
 
 type CapabilitySupport struct {
@@ -206,6 +207,7 @@ wider table.
 | 0x03 | Events      | EVENTREADY 0x80, EVENTFILERECEIVED 0x81, EVENTMOUNT 0x82, EVENTERROR 0x83, EVENTLOG 0x84, EVENTINITFAILED 0x86 | 1..1 | full event family (only READY/INIT_FAILED have producers today) |
 | 0x04 | FileTransfer| XFERINIT 0x20, XFERCHUNK 0x21, XFERDONE 0x22   | 1..1    | chunked import/export, both directions |
 | 0x05 | SyncFS      | SYNCFILESYSTEMS 0x40, SYNCFILESYSTEMSACK 0x41  | 1..1    | wired end-to-end (lifecycle stop / snapshot / checkpoint flush) |
+| 0x06 | AppChannel  | APP_OPEN 0x50, APP_ACCEPT 0x51, APP_REJECT 0x52, APP_DATA 0x53, APP_CREDIT 0x54, APP_CLOSE 0x55, APP_RESET 0x56 | 1..1 | multiplexed byte streams on port 9005, credit flow control and half-close |
 
 Properties:
 
@@ -291,7 +293,7 @@ must close the connection after a rejection.
 ### 8.1 Per-port requirements (Shifty conventions)
 
 Each MVCP connection negotiates **independently**; the result on port
-9000 is never reused for 9002/9003/9004. After the handshake, each
+9000 is never reused for 9002/9003/9004/9005. After the handshake, each
 service enforces its own requirements. Both sides enforce the same
 table (symmetric enforcement catches misconfiguration):
 
@@ -301,6 +303,7 @@ table (symmetric enforcement catches misconfiguration):
 | 9002 | Events               | Events ≥ 1                            |
 | 9003 | Status / heartbeat   | *none* (baseline only)                |
 | 9004 | File transfer        | FileTransfer ≥ 1                      |
+| 9005 | App channel          | AppChannel ≥ 1                        |
 
 Port 9003 deliberately has **no requirements**: the healthcheck must
 work even against a completely empty capability intersection. The
@@ -310,7 +313,7 @@ baseline status/heartbeat contract is what drives the VM lifecycle.
 
 | Endpoint                        | Accepts / expects peer role          |
 |---------------------------------|--------------------------------------|
-| vhandler sessions (9000/9002/9003/9004) | Core                         |
+| vhandler sessions (9000/9002/9003/9004/9005) | Core                         |
 | core dial endpoints (all ports) | VHandler                             |
 
 An unexpected role is rejected during the handshake with
@@ -369,8 +372,8 @@ shifty-core:
 - `vsock/dial.go`: `DialMVCP` returns
   `(*Conn, NegotiatedCapabilities, error)` and runs
   `ClientHandshake` with the per-port `portRequirements` table
-  (9000: Exec/Tools/SyncFS; 9002: Events; 9004: FileTransfer);
-  `CoreHello()` builds the advertised HELLO
+  (9000: Exec/Tools/SyncFS; 9002: Events; 9004: FileTransfer;
+  9005: AppChannel); `CoreHello()` builds the advertised HELLO
 - `app/vm/healthcheck.go` `dialStatus` (port 9003): `ClientHandshake`
   with no requirements; the 2s deadline convention is kept
 - `vsock/rpc.go`: `RPCClient.Negotiated()` exposes the negotiated set
