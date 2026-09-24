@@ -58,6 +58,9 @@ const (
 	CapabilityFileTransfer CapabilityID = 0x04
 	// CapabilitySyncFS covers SYNCFILESYSTEMS/SYNCFILESYSTEMSACK.
 	CapabilitySyncFS CapabilityID = 0x05
+	// CapabilityAppChannel covers APP_OPEN/ACCEPT/REJECT/DATA/CREDIT/
+	// CLOSE/RESET on port 9005 (app-to-app byte streams).
+	CapabilityAppChannel CapabilityID = 0x06
 )
 
 // CapabilitySupport is the revision range a peer supports for a
@@ -96,6 +99,7 @@ var DefaultCapabilities = AdvertisedCapabilities{
 	CapabilityEvents:       {MinRevision: 1, MaxRevision: 1},
 	CapabilityFileTransfer: {MinRevision: 1, MaxRevision: 1},
 	CapabilitySyncFS:       {MinRevision: 1, MaxRevision: 1},
+	CapabilityAppChannel:   {MinRevision: 1, MaxRevision: 1},
 }
 
 // NewHello builds a Hello from a role, an informational software

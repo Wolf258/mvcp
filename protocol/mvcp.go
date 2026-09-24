@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"regexp"
 )
 
 const frameHeaderSize = 6
@@ -44,6 +45,17 @@ const (
 	// capturing an overlay or creating a snapshot.
 	TypeSYNCFILESYSTEMS    uint8 = 0x40
 	TypeSYNCFILESYSTEMSACK uint8 = 0x41
+
+	// App channel (0x50–0x56). All APP_* frames use flags=0 and
+	// msg_id=0; correlation is by stream_id. See
+	// docs/services/app-channel.md.
+	TypeAPPOPEN   uint8 = 0x50
+	TypeAPPACCEPT uint8 = 0x51
+	TypeAPPREJECT uint8 = 0x52
+	TypeAPPDATA   uint8 = 0x53
+	TypeAPPCREDIT uint8 = 0x54
+	TypeAPPCLOSE  uint8 = 0x55
+	TypeAPPRESET  uint8 = 0x56
 
 	TypeEVENTREADY        uint8 = 0x80
 	TypeEVENTFILERECEIVED uint8 = 0x81
@@ -92,6 +104,17 @@ const (
 	// capability is missing or has no common revision (handshake,
 	// post-wire-acceptance).
 	ErrorCodeNoCommonCapability uint16 = 0x000C
+
+	// App channel error codes (APP_REJECT / APP_RESET).
+	ErrorCodeAppServiceNotFound uint16 = 0x0020
+	ErrorCodeAppNotAuthorized   uint16 = 0x0021
+	ErrorCodeAppServiceBusy     uint16 = 0x0022
+	ErrorCodeAppQuotaExceeded   uint16 = 0x0023
+	ErrorCodeAppPeerGone        uint16 = 0x0024
+	ErrorCodeAppOverflow        uint16 = 0x0025
+	ErrorCodeAppTimeout         uint16 = 0x0026
+	ErrorCodeAppProtocolError   uint16 = 0x0027
+	ErrorCodeAppLocalError      uint16 = 0x0028
 )
 
 // --- Heartbeat states (lifecycle) ---
@@ -229,4 +252,24 @@ func EncodeStarted(stream bool) []byte {
 	var buf bytes.Buffer
 	WriteBool(&buf, stream)
 	return buf.Bytes()
+}
+
+// --- App channel limits (v1 defaults) ---
+
+const (
+	AppInitialWindow uint32 = 256 << 10
+	AppMaxCredit     uint32 = 4 * AppInitialWindow
+	AppMaxStreams           = 64
+	AppMaxMetaBytes         = 1 << 10
+	AppMaxDataBytes         = 64 << 10
+	AppMaxSendQueue  uint64 = 1 << 20
+	AppMaxBuffered   uint64 = 8 << 20
+)
+
+var appServicePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
+
+// ValidAppService reports whether service is a valid service_id:
+// ^[a-z][a-z0-9-]{0,30}$ and at most 64 bytes.
+func ValidAppService(service string) bool {
+	return len(service) <= 64 && appServicePattern.MatchString(service)
 }
