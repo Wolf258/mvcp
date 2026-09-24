@@ -227,6 +227,10 @@ func (st *Stream) Read(p []byte) (int, error) {
 		}
 		if st.remoteClosed {
 			st.mu.Unlock()
+			// The peer closed and every buffered byte has been
+			// delivered: this is the clean end, so let the stream
+			// finish now that the consumer is done with the data.
+			st.maybeFinish()
 			return 0, io.EOF
 		}
 		st.cond.Wait()
@@ -381,7 +385,11 @@ func (st *Stream) setReset(code uint16, message string) {
 
 func (st *Stream) maybeFinish() {
 	st.mu.Lock()
-	done := st.localClosed && st.remoteClosed && len(st.sendQ) == 0
+	// Clean teardown requires that no inbound bytes are left undelivered:
+	// closing the endpoint now would truncate data the peer already sent
+	// before its APP_CLOSE (spec §4.5/§4.9). The reader triggers another
+	// maybeFinish when it drains inQ at EOF.
+	done := st.localClosed && st.remoteClosed && len(st.sendQ) == 0 && len(st.inQ) == 0
 	st.mu.Unlock()
 	if done {
 		st.sess.finish(st)

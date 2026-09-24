@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -438,5 +439,117 @@ func TestOversizedDataResets(t *testing.T) {
 	}
 	if rst.Code != protocol.ErrorCodeAppProtocolError {
 		t.Fatalf("reset code = 0x%04X, want PROTOCOL_ERROR", rst.Code)
+	}
+}
+
+// gatedEndpoint is an acceptor endpoint whose writes stay blocked until
+// the test releases the gate. It lets a test hold the endpoint stalled
+// while both sides half-close, with inbound data still buffered.
+type gatedEndpoint struct {
+	gate    chan struct{}
+	done    chan struct{}
+	gateOne sync.Once
+	doneOne sync.Once
+
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	closed bool
+}
+
+func newGatedEndpoint() *gatedEndpoint {
+	return &gatedEndpoint{gate: make(chan struct{}), done: make(chan struct{})}
+}
+
+func (g *gatedEndpoint) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (g *gatedEndpoint) Write(p []byte) (int, error) {
+	select {
+	case <-g.done:
+		return 0, io.ErrClosedPipe
+	case <-g.gate:
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return 0, io.ErrClosedPipe
+	}
+	return g.buf.Write(p)
+}
+
+// CloseWrite is a no-op: this endpoint only buffers writes.
+func (g *gatedEndpoint) CloseWrite() error { return nil }
+
+func (g *gatedEndpoint) Close() error {
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+	g.doneOne.Do(func() { close(g.done) })
+	return nil
+}
+
+func (g *gatedEndpoint) release() { g.gateOne.Do(func() { close(g.gate) }) }
+
+func (g *gatedEndpoint) data() []byte {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]byte(nil), g.buf.Bytes()...)
+}
+
+func TestCleanCloseKeepsBufferedData(t *testing.T) {
+	// The acceptor half-closes first and only drains afterwards; every
+	// byte the opener sent before its APP_CLOSE must still reach the
+	// acceptor endpoint (spec §4.9: a half-closed peer keeps receiving).
+	closed := make(chan *Stream, 1)
+	serverConn, clientConn := net.Pipe()
+	eps := make(chan *gatedEndpoint, 1)
+	host := NewSession(serverConn, Config{
+		Role: RoleHost,
+		Handler: handlerFunc(func(context.Context, string, []byte) (Endpoint, []byte, error) {
+			ep := newGatedEndpoint()
+			eps <- ep
+			return ep, nil, nil
+		}),
+		Observer: observerFunc(func(st *Stream) { closed <- st }),
+	})
+	guest := NewSession(clientConn, Config{Role: RoleGuest, Handler: handlerFunc(
+		func(context.Context, string, []byte) (Endpoint, []byte, error) {
+			return nil, nil, errors.New("guest handler must not be used")
+		})})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = host.Serve(ctx) }()
+	go func() { _ = guest.Serve(ctx) }()
+	defer host.Close()
+	defer guest.Close()
+
+	st, err := guest.Open(context.Background(), "svc", nil)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ep := <-eps
+	payload := bytes.Repeat([]byte{0x5A}, 128<<10)
+	if _, err := st.Write(payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := st.CloseWrite(); err != nil {
+		t.Fatalf("close write: %v", err)
+	}
+
+	premature := false
+	select {
+	case <-closed:
+		premature = true // both sides closed while inbound data is buffered
+	case <-time.After(300 * time.Millisecond):
+	}
+	ep.release()
+	if !premature {
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("stream did not finish after the endpoint drained")
+		}
+	}
+	if got := ep.data(); !bytes.Equal(got, payload) {
+		t.Fatalf("endpoint received %d bytes, want %d (clean close must not truncate)", len(got), len(payload))
 	}
 }
