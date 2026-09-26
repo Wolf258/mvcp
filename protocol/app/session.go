@@ -209,7 +209,7 @@ func appMessageType(m protocol.Message) (uint8, error) {
 }
 
 // Serve reads frames until the connection fails, the context is
-// cancelled, or a protocol violation forces a close. It returns the
+// canceled, or a protocol violation forces a close. It returns the
 // terminal error.
 func (s *Session) Serve(ctx context.Context) error {
 	stop := make(chan struct{})
